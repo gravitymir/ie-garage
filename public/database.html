@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cleere Auto Services - Database</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" />
+  <style>
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 24px;
+      color: #111;
+    }
+
+    .clock {
+      display: flex;
+      height: 3rem;
+      font-size: 4rem;
+      font-weight: 900;
+      background-repeat: no-repeat;
+      background-position: top -6rem center;
+      background-size: 32rem;
+      color: #3275ac;
+      justify-content: center;
+      align-items: center;
+    }
+
+    @media (min-width: 1200px) {
+      .clock {
+        height: 6rem;
+        font-size: 8rem;
+      }
+    }
+    @media (max-width: 999px) {
+      .clock {
+        height: 3rem;
+        font-size: 4rem;
+      }
+    }
+    @media (max-width: 799px) {
+      .clock {
+        height: 2.5rem;
+        font-size: 3rem;
+      }
+    }
+    @media (max-width: 480px) {
+      .clock {
+        height: 2rem;
+        font-size: 2rem;
+      }
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .clock-link {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .clock-link:hover {
+      text-decoration: none;
+    }
+
+    tbody tr {
+      cursor: pointer;
+    }
+
+    tbody tr:hover {
+      background: #e0e0e0;
+    }
+
+    .table-wrap {
+      max-height: 60vh;
+      overflow: auto;
+      border: 1px solid #bbb;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      border: 1px solid #bbb;
+      padding: 6px 8px;
+      text-align: left;
+    }
+
+    th {
+      background: #d6d6d6;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    th:first-child,
+    td:first-child {
+      width: 140px;
+      white-space: nowrap;
+    }
+
+    th:nth-child(2),
+    td:nth-child(2) {
+      font-weight: 900;
+      text-align: center;
+    }
+
+    button {
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <a href="/job.html" class="clock-link">
+    <div class="clock">
+      <span id="clock"></span>
+    </div>
+  </a>
+  <div class="toolbar"></div>
+  <div class="muted" id="status"></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>modified</th>
+          <th>Date in</th>
+          <th>Reg No</th>
+          <th>Make</th>
+          <th>Model</th>
+          
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const rowsEl = document.getElementById("rows");
+    const statusEl = document.getElementById("status");
+    const clockEl = document.getElementById("clock");
+
+    function formatSize(bytes) {
+      if (!Number.isFinite(bytes)) return "";
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function formatDate(ms) {
+      if (!Number.isFinite(ms)) return "";
+      const d = new Date(ms);
+      const pad = (n) => String(n).padStart(2, "0");
+      const day = pad(d.getDate());
+      const month = pad(d.getMonth() + 1);
+      const year = d.getFullYear();
+      const hours = pad(d.getHours());
+      const minutes = pad(d.getMinutes());
+      const seconds = pad(d.getSeconds());
+      return `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
+    }
+
+    function updateClock() {
+      if (!clockEl) return;
+      clockEl.textContent = formatDate(Date.now());
+    }
+
+    async function loadList() {
+      statusEl.textContent = "Loading...";
+      rowsEl.innerHTML = "";
+      try {
+        const res = await fetch("/api/list");
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+        const data = await res.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (!items.length) {
+          statusEl.textContent = "No saved documents.";
+          return;
+        }
+        statusEl.textContent = "";
+        items.forEach((item) => {
+          const tr = document.createElement("tr");
+          const editUrl = `/job.html?file=${encodeURIComponent(item.name)}`;
+          tr.innerHTML = `
+              <td>${formatDate(item.modified_ms)}</td>
+              <td>${item.date_in || ""}</td>
+              <td>${item.reg_no || ""}</td>
+              <td>${item.make || ""}</td>
+              <td>${item.model || ""}</td>
+            `;
+          tr.addEventListener("click", () => {
+            window.location.href = editUrl;
+          });
+          rowsEl.appendChild(tr);
+        });
+      } catch (err) {
+        statusEl.textContent = String(err);
+      }
+    }
+
+    loadList();
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+</body>
+
+</html>
