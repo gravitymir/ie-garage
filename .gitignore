@@ -19,3 +19,16 @@ target
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# ---------- runtime data (per-deployment, contains customer PII) ----------
+# Saved cars, workers, store inventory and autofill rules are produced by
+# the running app — they belong to a specific install, not to the source.
+cars/
+workers/
+store/
+autofill/
+database/
+
+# ---------- local tooling ----------
+.claude/
+scripts/

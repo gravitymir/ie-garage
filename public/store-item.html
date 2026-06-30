@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Store Item - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home { text-decoration: none; color: #3275ac; font-weight: 600; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 460px) 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 14px;
+    }
+    .card h2 { margin: 0 0 10px; font-size: 1rem; color: #555; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+    .field label { font-size: 12px; color: #555; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .stock-cur { display: flex; gap: 6px; align-items: center; }
+    .stock-cur button {
+      padding: 4px 10px; font-size: 14px; font-weight: 900;
+      background: #eee; color: #333; border: 1px solid #bbb;
+      border-radius: 4px; cursor: pointer; font-family: inherit;
+    }
+    input[type="text"], input[type="number"], textarea, select {
+      font-family: inherit; padding: 6px 8px; border: 1px solid #bbb;
+      border-radius: 4px; font-size: 14px; width: 100%;
+    }
+    textarea { min-height: 70px; resize: vertical; }
+    button.primary {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #3275ac; background: #3275ac; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button.danger {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #c33; background: #c33; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button:hover { opacity: 0.9; }
+    .row-btns { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+
+    .status { font-size: 13px; color: #555; margin: 6px 0; }
+    .status.err { color: #c33; }
+    .status.ok { color: #393; }
+    .status.warn { color: #c33; font-weight: 600; }
+
+    .images {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+    }
+    .img-wrap {
+      position: relative;
+      aspect-ratio: 1;
+      background: #eee center/cover no-repeat;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+    }
+    .img-wrap button {
+      position: absolute; top: 4px; right: 4px;
+      padding: 2px 6px; font-size: 11px;
+      background: rgba(204,51,51,0.9); color: #fff;
+      border: none; border-radius: 3px; cursor: pointer;
+    }
+    .drop-zone {
+      border: 2px dashed #bbb; border-radius: 6px;
+      padding: 20px; text-align: center; color: #777;
+      cursor: pointer; margin-bottom: 10px;
+    }
+    .drop-zone.hover { border-color: #3275ac; background: #f0f6fb; }
+  </style>
+  <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <a href="/index.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; Home</a>
+      <a href="/store.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; Back to Store</a>
+      <h1 id="title">Add Item</h1>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="card">
+      <h2>Details</h2>
+
+      <div class="field">
+        <label>Division</label>
+        <select id="division_id">
+          <option value="">(uncategorized)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Name</label>
+        <input type="text" id="name" placeholder="e.g. Brake pads front" />
+      </div>
+
+      <div class="field">
+        <label>ID number / part number</label>
+        <input type="text" id="id_number" placeholder="e.g. GDB1234" style="text-transform: uppercase;" />
+      </div>
+
+      <div class="field">
+        <label>Producer / manufacturer</label>
+        <input type="text" id="producer" placeholder="e.g. Bosch" />
+      </div>
+
+      <div id="wheel-section" style="display:none;">
+        <h2 style="margin-top:14px;">Wheel / tyre details</h2>
+        <div class="field">
+          <label>Size</label>
+          <input type="text" id="wheel_size" placeholder="e.g. 205/55 R16" />
+        </div>
+        <div class="row3">
+          <div class="field">
+            <label>Season</label>
+            <select id="wheel_season">
+              <option value="">—</option>
+              <option value="summer">Summer</option>
+              <option value="winter">Winter</option>
+              <option value="all-season">All-season</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <select id="wheel_type">
+              <option value="">—</option>
+              <option value="alloy">Alloy</option>
+              <option value="steel">Steel</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>PCD</label>
+            <input type="text" id="wheel_pcd" placeholder="e.g. 5x112" />
+          </div>
+        </div>
+        <div class="field">
+          <label>ET (offset)</label>
+          <input type="text" id="wheel_et" placeholder="e.g. 45" />
+        </div>
+      </div>
+
+      <h2 style="margin-top:14px;">Stock</h2>
+      <div class="row3">
+        <div class="field">
+          <label>Min</label>
+          <input type="number" id="min_count" value="0" min="0" />
+        </div>
+        <div class="field">
+          <label>Max</label>
+          <input type="number" id="max_count" value="0" min="0" />
+        </div>
+        <div class="field">
+          <label>Current</label>
+          <div class="stock-cur">
+            <button type="button" id="dec">-</button>
+            <input type="number" id="current_count" value="0" />
+            <button type="button" id="inc">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="status warn" id="stock-warn"></div>
+
+      <h2 style="margin-top:14px;">Notes</h2>
+      <div class="field">
+        <label>Description</label>
+        <textarea id="description"></textarea>
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="notes"></textarea>
+      </div>
+
+      <div class="row-btns">
+        <button class="primary" id="save-btn">Save</button>
+        <button class="danger" id="delete-btn" style="display:none;">Delete item</button>
+      </div>
+      <div class="status" id="item-status"></div>
+    </div>
+
+    <div class="card">
+      <h2>Images</h2>
+      <div id="image-section" style="display:none;">
+        <div class="drop-zone" id="drop">
+          Drop image here, or <u>click to upload</u>
+          <input type="file" id="file-input" accept="image/*" multiple style="display:none;" />
+        </div>
+        <div class="status" id="upload-status"></div>
+        <div class="images" id="images"></div>
+      </div>
+      <div id="image-hint" class="status">Save the item first to enable image uploads.</div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    let itemId = params.get("id") || "";
+    const presetDivision = params.get("division") || "";
+    let images = [];
+    let divisions = [];
+
+    const titleEl = document.getElementById("title");
+    const deleteBtn = document.getElementById("delete-btn");
+    const itemStatus = document.getElementById("item-status");
+    const uploadStatus = document.getElementById("upload-status");
+    const imgSection = document.getElementById("image-section");
+    const imgHint = document.getElementById("image-hint");
+    const stockWarn = document.getElementById("stock-warn");
+
+    // Show the wheel/tyre fields only when the chosen division is a wheels one.
+    function isWheelDivision(id) {
+      const d = divisions.find(x => x.id === id);
+      return !!d && /wheel|tyre|tire|колес|колёс|колёса|шин/i.test(d.name || "");
+    }
+    function updateWheelSection() {
+      const sel = document.getElementById("division_id");
+      const show = isWheelDivision(sel.value);
+      document.getElementById("wheel-section").style.display = show ? "" : "none";
+    }
+
+    function applyMode() {
+      if (itemId) {
+        titleEl.textContent = "Edit Item";
+        deleteBtn.style.display = "";
+        imgSection.style.display = "";
+        imgHint.style.display = "none";
+      } else {
+        titleEl.textContent = "Add Item";
+        deleteBtn.style.display = "none";
+        imgSection.style.display = "none";
+        imgHint.style.display = "";
+      }
+    }
+
+    function checkStockWarning() {
+      const cur = Number(document.getElementById("current_count").value) || 0;
+      const min = Number(document.getElementById("min_count").value) || 0;
+      const max = Number(document.getElementById("max_count").value) || 0;
+      if (min > 0 && cur < min) {
+        stockWarn.textContent = `Below minimum (need at least ${min}).`;
+      } else if (max > 0 && cur > max) {
+        stockWarn.textContent = `Above maximum (over by ${cur - max}).`;
+      } else {
+        stockWarn.textContent = "";
+      }
+    }
+
+    async function loadDivisions(selectedId) {
+      const sel = document.getElementById("division_id");
+      try {
+        const res = await fetch("/api/store/divisions");
+        const data = await res.json();
+        divisions = data.items || [];
+        sel.innerHTML = `<option value="">(uncategorized)</option>`;
+        divisions.forEach(d => {
+          const o = document.createElement("option");
+          o.value = d.id;
+          o.textContent = d.name;
+          sel.appendChild(o);
+        });
+        if (selectedId) sel.value = selectedId;
+        updateWheelSection();
+      } catch (_) {}
+    }
+
+    async function load() {
+      applyMode();
+      await loadDivisions(presetDivision);
+      if (!itemId) {
+        checkStockWarning();
+        return;
+      }
+      try {
+        const res = await fetch(`/api/store/items/${encodeURIComponent(itemId)}`);
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        document.getElementById("name").value = data.name || "";
+        document.getElementById("id_number").value = String(data.id_number || "").toUpperCase();
+        document.getElementById("producer").value = data.producer || "";
+        document.getElementById("description").value = data.description || "";
+        document.getElementById("notes").value = data.notes || "";
+        document.getElementById("min_count").value = data.min_count ?? 0;
+        document.getElementById("max_count").value = data.max_count ?? 0;
+        document.getElementById("current_count").value = data.current_count ?? 0;
+        document.getElementById("division_id").value = data.division_id || "";
+        document.getElementById("wheel_size").value = data.wheel_size || "";
+        document.getElementById("wheel_season").value = data.wheel_season || "";
+        document.getElementById("wheel_type").value = data.wheel_type || "";
+        document.getElementById("wheel_pcd").value = data.wheel_pcd || "";
+        document.getElementById("wheel_et").value = data.wheel_et || "";
+        updateWheelSection();
+        images = data.images || [];
+        renderImages();
+        checkStockWarning();
+      } catch (e) {
+        itemStatus.textContent = "Error: " + e.message;
+        itemStatus.className = "status err";
+      }
+    }
+
+    function renderImages() {
+      const wrap = document.getElementById("images");
+      wrap.innerHTML = "";
+      if (!images.length) {
+        wrap.innerHTML = `<div class="status">No images yet.</div>`;
+        return;
+      }
+      images.forEach(name => {
+        const div = document.createElement("div");
+        div.className = "img-wrap";
+        const src = `/store-files/items/${encodeURIComponent(itemId)}/images/${encodeURIComponent(name)}`;
+        div.style.backgroundImage = `url('${src}')`;
+        div.innerHTML = `<button data-name="${name}">x</button>`;
+        div.querySelector("button").addEventListener("click", async () => {
+          if (!confirm("Delete image?")) return;
+          await fetch(`/api/store/items/${encodeURIComponent(itemId)}/images/${encodeURIComponent(name)}`, { method: "DELETE" });
+          images = images.filter(n => n !== name);
+          renderImages();
+        });
+        wrap.appendChild(div);
+      });
+    }
+
+    document.getElementById("inc").addEventListener("click", () => {
+      const inp = document.getElementById("current_count");
+      inp.value = (Number(inp.value) || 0) + 1;
+      checkStockWarning();
+    });
+    document.getElementById("dec").addEventListener("click", () => {
+      const inp = document.getElementById("current_count");
+      inp.value = Math.max(0, (Number(inp.value) || 0) - 1);
+      checkStockWarning();
+    });
+    ["min_count","max_count","current_count"].forEach(id => {
+      document.getElementById(id).addEventListener("input", checkStockWarning);
+    });
+    document.getElementById("division_id").addEventListener("change", updateWheelSection);
+
+    // The ID number / part number is always stored and shown uppercase.
+    // CSS makes the displayed glyphs uppercase, but here we also write the
+    // uppercased text into the input's actual value so save() writes it as
+    // uppercase to the JSON and other pages render it consistently.
+    (function () {
+      const idEl = document.getElementById("id_number");
+      if (!idEl) return;
+      idEl.addEventListener("input", () => {
+        const pos = idEl.selectionStart;
+        const up = idEl.value.toUpperCase();
+        if (idEl.value !== up) {
+          idEl.value = up;
+          try { idEl.setSelectionRange(pos, pos); } catch (_) {}
+        }
+      });
+    })();
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      itemStatus.textContent = "Saving...";
+      itemStatus.className = "status";
+      const body = {
+        name: document.getElementById("name").value.trim(),
+        id_number: document.getElementById("id_number").value.trim().toUpperCase(),
+        producer: document.getElementById("producer").value.trim(),
+        description: document.getElementById("description").value,
+        notes: document.getElementById("notes").value,
+        division_id: document.getElementById("division_id").value,
+        min_count: Number(document.getElementById("min_count").value) || 0,
+        max_count: Number(document.getElementById("max_count").value) || 0,
+        current_count: Number(document.getElementById("current_count").value) || 0,
+      };
+      // Persist wheel/tyre fields when this item belongs to a wheels division.
+      if (isWheelDivision(body.division_id)) {
+        body.wheel_size = document.getElementById("wheel_size").value.trim();
+        body.wheel_season = document.getElementById("wheel_season").value;
+        body.wheel_type = document.getElementById("wheel_type").value;
+        body.wheel_pcd = document.getElementById("wheel_pcd").value.trim();
+        body.wheel_et = document.getElementById("wheel_et").value.trim();
+      }
+      showOverlay("Saving…");
+      try {
+        let res;
+        if (itemId) {
+          res = await fetch(`/api/store/items/${encodeURIComponent(itemId)}`, {
+            method: "PUT",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify(body),
+          });
+        } else {
+          res = await fetch(`/api/store/items`, {
+            method: "POST",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify(body),
+          });
+        }
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (!itemId && data.id) {
+          itemId = data.id;
+          const url = new URL(window.location);
+          url.searchParams.set("id", itemId);
+          url.searchParams.delete("division");
+          window.history.replaceState({}, "", url);
+          applyMode();
+        }
+        itemStatus.textContent = "Saved.";
+        itemStatus.className = "status ok";
+        setTimeout(() => { itemStatus.textContent = ""; }, 1500);
+      } catch (e) {
+        itemStatus.textContent = "Error: " + e.message;
+        itemStatus.className = "status err";
+      } finally {
+        hideOverlay();
+      }
+    });
+
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm("Delete this item and all its images?")) return;
+      await fetch(`/api/store/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+      window.location.href = "/store.html";
+    });
+
+    // Image upload
+    const dropZone = document.getElementById("drop");
+    const fileInput = document.getElementById("file-input");
+    dropZone.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", (e) => handleFiles(e.target.files));
+    ["dragenter", "dragover"].forEach(ev => {
+      dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.add("hover"); });
+    });
+    ["dragleave", "drop"].forEach(ev => {
+      dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.remove("hover"); });
+    });
+    dropZone.addEventListener("drop", (e) => handleFiles(e.dataTransfer.files));
+
+    async function handleFiles(files) {
+      if (!itemId) {
+        uploadStatus.textContent = "Save the item first.";
+        uploadStatus.className = "status err";
+        return;
+      }
+      for (const f of files) {
+        if (!f.type.startsWith("image/")) continue;
+        uploadStatus.textContent = `Uploading ${f.name}...`;
+        uploadStatus.className = "status";
+        showOverlay(`Uploading ${f.name}…`);
+        try {
+          const b64 = await fileToBase64(f);
+          const res = await fetch(`/api/store/items/${encodeURIComponent(itemId)}/images`, {
+            method: "POST",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({ filename: f.name, data_base64: b64 }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          images.push(data.filename);
+          renderImages();
+          uploadStatus.textContent = `Uploaded ${f.name}.`;
+          uploadStatus.className = "status ok";
+        } catch (e) {
+          uploadStatus.textContent = "Error: " + e.message;
+          uploadStatus.className = "status err";
+        } finally {
+          hideOverlay();
+        }
+      }
+    }
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+    }
+
+    load();
+  </script>
+</body>
+
+</html>

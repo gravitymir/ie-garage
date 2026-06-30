@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Autofill - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center;
+      gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    input[type="search"] {
+      font-family: inherit; padding: 8px 10px; border: 1px solid #bbb;
+      border-radius: 4px; font-size: 14px; flex: 1; min-width: 200px;
+    }
+    #search { font-size: 28px; padding: 10px 14px; }
+    button.primary {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #3275ac; background: #3275ac; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button.primary:hover { opacity: 0.9; }
+    .muted { color: #666; font-size: 13px; margin: 8px 0; }
+    .list { display: flex; flex-direction: column; gap: 10px; }
+    .empty-cta {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 14px; padding: 32px 16px; text-align: center;
+    }
+    .empty-cta .msg { color: #555; font-size: 14px; max-width: 480px; }
+    .empty-cta .big-add {
+      font-family: inherit; padding: 14px 28px;
+      border: 1px solid #3275ac; background: #3275ac; color: #fff;
+      border-radius: 6px; cursor: pointer;
+      font-size: 18px; font-weight: 600;
+      box-shadow: 0 2px 8px rgba(50,117,172,0.25);
+    }
+    .empty-cta .big-add:hover { opacity: 0.92; transform: translateY(-1px); }
+    .rule {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 12px 14px; text-decoration: none; color: inherit; display: block;
+      transition: border-color 0.1s, transform 0.1s;
+    }
+    .rule:hover { border-color: #3275ac; transform: translateY(-1px); }
+    .rule .name-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .rule .name { font-size: 1.05rem; font-weight: 700; color: #3275ac; }
+    .rule .fuel-chip {
+      font-size: 0.7rem; font-weight: 900; letter-spacing: 0.05em;
+      padding: 2px 8px; border-radius: 10px; border: 1px solid;
+    }
+    .rule .oil-chip {
+      font-size: 0.7rem; font-weight: 900; letter-spacing: 0.05em;
+      padding: 2px 8px; border-radius: 10px;
+      color: #1b5d7a; background: #d3eaf3; border: 1px solid #1b5d7a;
+    }
+    .rule .trigger { font-size: 12px; color: #555; margin-top: 2px; font-style: italic; }
+    .rule .parts {
+      margin-top: 8px; font-size: 12px; color: #444;
+      display: flex; flex-wrap: wrap; gap: 4px 8px;
+    }
+    .rule .chip {
+      background: #f0f6fb; border: 1px solid #cfdfeb;
+      padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+    }
+    .rule .chip .q { color: #3275ac; font-weight: 700; }
+    .meta { font-size: 11px; color: #888; margin-top: 6px; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/fuel-detect.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <h1>Autofill rules</h1>
+  </div>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search by name, trigger, part..." list="rule-name-suggestions" autocomplete="off" />
+    <datalist id="rule-name-suggestions"></datalist>
+  </div>
+
+  <div class="muted" id="status">Loading...</div>
+  <div class="list" id="list"></div>
+
+  <script>
+    const listEl = document.getElementById("list");
+    const statusEl = document.getElementById("status");
+    const searchEl = document.getElementById("search");
+    let rules = [];
+
+    function render() {
+      const q = (searchEl.value || "").toLowerCase().trim();
+      const filtered = rules.filter(r => {
+        if (!q) return true;
+        const haystack = [
+          r.name, r.trigger,
+          ...(Array.isArray(r.parts) ? r.parts.map(p => `${p.used} ${p.number} ${p.quantity}`) : [])
+        ].join(" ").toLowerCase();
+        return haystack.includes(q);
+      });
+      listEl.innerHTML = "";
+      if (!filtered.length) {
+        statusEl.textContent = "";
+        const cta = document.createElement("div");
+        cta.className = "empty-cta";
+        const msg = document.createElement("div");
+        msg.className = "msg";
+        msg.textContent = rules.length
+          ? (q ? `No rules match "${searchEl.value.trim()}".`
+               : "No matches.")
+          : "No rules yet. Type a name in the search field above to create the first one.";
+        cta.appendChild(msg);
+        // The button only appears when the user has typed something — that
+        // text becomes the new rule's name. With an empty search field there
+        // is nothing to pre-fill, so we don't offer a button and avoid the
+        // "blank rule with no name" trap.
+        if (q) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "big-add";
+          btn.textContent = `+ Add Rule "${searchEl.value.trim()}"`;
+          btn.addEventListener("click", goAddRule);
+          cta.appendChild(btn);
+        }
+        listEl.appendChild(cta);
+        return;
+      }
+      statusEl.textContent = `${filtered.length} rule${filtered.length === 1 ? "" : "s"}`;
+      filtered.forEach(r => {
+        const a = document.createElement("a");
+        a.className = "rule";
+        a.href = `/autofill-rule.html?id=${encodeURIComponent(r.id)}`;
+        const parts = Array.isArray(r.parts) ? r.parts : [];
+        const chips = parts.length
+          ? `<div class="parts">${parts.map(p => {
+              const q = (p.quantity || "").trim();
+              const u = (p.unit || "").trim();
+              const qty = q ? `${q}${u ? " " + u : ""}` : "";
+              return `<span class="chip">${esc(p.used)}${qty ? ` <span class="q">×${esc(qty)}</span>` : ""}</span>`;
+            }).join("")}</div>`
+          : `<div class="parts"><span class="chip">(no parts)</span></div>`;
+        // Applies-to chips (one per fuel type when the rule is fuel-specific).
+        let appliesList;
+        if (Array.isArray(r.applies_to)) appliesList = r.applies_to.map(s => String(s).toLowerCase());
+        else if (typeof r.applies_to === "string" && r.applies_to.trim()) appliesList = [r.applies_to.trim().toLowerCase()];
+        else appliesList = [];
+        const specific = appliesList.filter(s => s && s !== "any");
+        const fuelChip = (specific.length && typeof window.fuelTypeMeta === "function")
+          ? specific.map(f => {
+              const m = window.fuelTypeMeta(f);
+              return `<span class="fuel-chip" style="color:${m.color};background:${m.bg};border-color:${m.color};">${esc(m.label)}</span>`;
+            }).join("")
+          : "";
+        // Engine-oil chip — shown when the rule appends MPM oils on autofill.
+        const oilsOn = !!(r.oils && r.oils.enabled);
+        const olderYears = Number((r.oils && r.oils.older_than_years) || 0);
+        const oilChip = oilsOn
+          ? `<span class="oil-chip" title="Appends every MPM-recommended engine oil for this car${olderYears > 0 ? `, plus an extra row for cars older than ${olderYears} years` : ""}">+ OIL${olderYears > 0 ? ` &gt;${olderYears}y` : ""}</span>`
+          : "";
+        a.innerHTML = `
+          <div class="name-row">
+            <span class="name">${esc(r.trigger || r.name || "(unnamed)")}</span>
+            ${fuelChip}
+            ${oilChip}
+          </div>
+          ${chips}
+        `;
+        listEl.appendChild(a);
+      });
+
+      // Persistent "+ Add Rule" button under the list, so the user can create
+      // another rule with the same trigger (e.g. a petrol variant of an
+      // existing diesel "full service"). When the search field has a value,
+      // it's pre-filled into the new rule's name; otherwise the user types it
+      // on the next page.
+      const trailing = document.createElement("div");
+      trailing.className = "empty-cta";
+      const trailingBtn = document.createElement("button");
+      trailingBtn.type = "button";
+      trailingBtn.className = "big-add";
+      trailingBtn.textContent = q
+        ? `+ Add Rule "${searchEl.value.trim()}"`
+        : "+ Add Rule";
+      trailingBtn.addEventListener("click", goAddRule);
+      trailing.appendChild(trailingBtn);
+      listEl.appendChild(trailing);
+    }
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s == null ? "" : String(s);
+      return d.innerHTML;
+    }
+
+    searchEl.addEventListener("input", render);
+
+    function goAddRule() {
+      const q = (searchEl.value || "").trim();
+      window.location.href = q
+        ? `/autofill-rule.html?name=${encodeURIComponent(q)}`
+        : "/autofill-rule.html";
+    }
+
+    function populateSuggestions() {
+      const dl = document.getElementById("rule-name-suggestions");
+      if (!dl) return;
+      // Deduplicate by lowercase trigger/name so the same value isn't suggested twice.
+      const seen = new Set();
+      dl.innerHTML = "";
+      rules.forEach(r => {
+        const v = String(r.trigger || r.name || "").trim();
+        if (!v) return;
+        const key = v.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        const o = document.createElement("option");
+        o.value = v;
+        dl.appendChild(o);
+      });
+    }
+
+    async function load() {
+      try {
+        const res = await fetch("/api/autofill/rules");
+        const data = await res.json();
+        rules = data.items || [];
+        populateSuggestions();
+        render();
+      } catch (e) {
+        statusEl.textContent = "Error: " + e.message;
+      }
+    }
+    load();
+  </script>
+</body>
+
+</html>

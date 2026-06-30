@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cars - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0;
+      padding: 20px;
+      color: #111;
+      background: #f5f5f5;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .topbar h1 {
+      margin: 0;
+      font-size: 1.4rem;
+    }
+    .home-link {
+      text-decoration: none;
+      color: #3275ac;
+      font-weight: 600;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    input[type="text"], input[type="search"], input[type="tel"] {
+      font-family: inherit;
+      padding: 8px 10px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    /* Main page search — doubled font size */
+    #search {
+      font-size: 28px;
+      padding: 10px 14px;
+    }
+    button {
+      font-family: inherit;
+      padding: 8px 14px;
+      border: 1px solid #3275ac;
+      background: #3275ac;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button.secondary {
+      background: #fff;
+      color: #3275ac;
+    }
+    button:hover { opacity: 0.9; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .car {
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 14px;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      gap: 12px;
+      align-items: stretch;
+      transition: transform 0.1s, border-color 0.1s;
+      position: relative;
+    }
+    .car:hover {
+      border-color: #3275ac;
+      transform: translateY(-1px);
+      z-index: 100; /* lift the hovered card (and its enlarged preview) above neighbours */
+    }
+    .car .info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .car .thumb-small {
+      flex: 0 0 auto;
+      align-self: stretch;
+      width: 90px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid #bbb;
+      background: #fff;
+      pointer-events: none;
+    }
+    .car .thumb-none {
+      flex: 0 0 auto;
+      align-self: stretch;
+      width: 90px;
+      border-radius: 4px;
+      border: 1px dashed #bbb;
+      background: #fafafa;
+      color: #999;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      line-height: 1.1;
+      pointer-events: none;
+    }
+    .car .thumb-big {
+      position: absolute;
+      top: -8px;
+      left: 50%;             /* centred on the hovered card, grows both ways */
+      width: 460px;
+      max-width: 92vw;
+      height: auto;          /* keep aspect ratio — show the whole photo, no square crop */
+      object-fit: contain;
+      border-radius: 8px;
+      border: 1px solid #888;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+      opacity: 0;
+      transform: translateX(-50%) scale(0.92);
+      transform-origin: top center;
+      transition: opacity 0.15s, transform 0.15s;
+      pointer-events: none;
+      z-index: 50;
+    }
+    .car:hover .thumb-big {
+      opacity: 1;
+      transform: translateX(-50%) scale(1);
+    }
+    .plate {
+      font-size: 1.2rem;
+      font-weight: 900;
+      color: #3275ac;
+      margin-bottom: 6px;
+      letter-spacing: 0.04em;
+    }
+    .mm { font-size: 0.95rem; font-weight: 600; }
+    .cust { font-size: 0.85rem; color: #555; margin-top: 4px; }
+    .meta { font-size: 0.78rem; color: #888; margin-top: 8px; display: flex; justify-content: space-between; }
+
+    .muted { color: #666; font-size: 13px; margin: 12px 0; }
+
+    /* Modal */
+    .modal-bg {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 100;
+      align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-bg.open { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      max-width: 480px;
+      width: 100%;
+      padding: 20px;
+      max-height: 90vh;
+      overflow: auto;
+    }
+    .modal h2 { margin-top: 0; }
+    .modal .field { margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+    .modal label { font-size: 12px; color: #555; }
+    .modal input { width: 100%; }
+    .modal input[readonly] { background: #eee; color: #444; cursor: default; }
+    .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+    .tabs { display: flex; gap: 2px; margin-bottom: 12px; border-bottom: 2px solid #ddd; }
+    .tab {
+      padding: 6px 12px;
+      background: #eee;
+      border: none;
+      border-radius: 4px 4px 0 0;
+      cursor: pointer;
+      font-family: inherit;
+      color: #444;
+    }
+    .tab.active { background: #3275ac; color: #fff; }
+    .pane { display: none; }
+    .pane.active { display: block; }
+    .status { font-size: 13px; color: #555; margin-top: 8px; }
+    .status.err { color: #c33; }
+    .variants { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow: auto; }
+    .variant {
+      padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 13px;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    }
+    .variant:hover { border-color: #3275ac; background: #f0f6fb; }
+    .variant.disabled { opacity: 0.55; pointer-events: none; cursor: default; }
+    .variant .v-label { min-width: 0; flex: 1; }
+    .variant .v-right { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .variant .v-engine { color: #555; font-size: 12px; }
+    .variant .v-oil { font-weight: 900; color: #2a7; white-space: nowrap; }
+    .variant .v-oil.unknown { color: #c33; }
+    /* Plate autocomplete */
+    #lookup-plate, #m-plate { text-transform: uppercase; letter-spacing: 0.02em; }
+    /* Lookup plate is fixed — show it as large plain text, not an editable field */
+    #lookup-plate {
+      border: none;
+      background: transparent;
+      padding: 0;
+      font-size: 2rem;
+      font-weight: 900;
+      color: #3275ac;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+    }
+    #lookup-plate:focus { outline: none; box-shadow: none; }
+    .plate-wrap { position: relative; }
+    .plate-suggestions {
+      position: absolute; top: 100%; left: 0; right: 0;
+      background: #fff; border: 1px solid #bbb; border-top: none;
+      border-radius: 0 0 4px 4px;
+      max-height: 220px; overflow: auto; z-index: 5;
+      display: none;
+    }
+    .plate-suggestions.open { display: block; }
+    .ps-item {
+      padding: 8px 10px; cursor: pointer; font-size: 13px;
+      border-bottom: 1px solid #eee;
+      display: flex; justify-content: space-between; gap: 8px;
+    }
+    .ps-item:last-child { border-bottom: none; }
+    .ps-item:hover, .ps-item.active { background: #f0f6fb; }
+    .ps-plate { font-weight: 900; color: #3275ac; }
+    .ps-mm { color: #666; font-size: 12px; }
+  </style>
+  <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/fuel-detect.js"></script>  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <a class="home" href="/index.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; Home</a>
+      <h1>Cars</h1>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search by plate, make, model, customer..." style="flex:1; min-width:200px;" />
+  </div>
+
+  <div class="muted" id="status">Loading...</div>
+  <div class="grid" id="grid"></div>
+
+  <!-- Shown only when a search query matches no existing car -->
+  <div id="empty-add" style="display:none; text-align:center; margin-top:24px;">
+    <button id="add-btn" style="font-size:18px; padding:16px 32px;">+ Add car <span id="add-plate"></span></button>
+  </div>
+
+  <!-- Add car modal -->
+  <div class="modal-bg" id="modal">
+    <div class="modal">
+      <h2>Add Car</h2>
+      <div class="tabs">
+        <button class="tab active" data-pane="lookup">Lookup (mpmoil)</button>
+        <button class="tab" data-pane="manual" style="display:none;">Manual</button>
+      </div>
+
+      <div class="pane active" id="pane-lookup">
+        <div class="field">
+          <label>Reg No / License Plate</label>
+          <div class="plate-wrap">
+            <input type="text" id="lookup-plate" placeholder="241-C-11814" autocomplete="off" readonly tabindex="-1" />
+            <div class="plate-suggestions" id="plate-suggestions"></div>
+          </div>
+        </div>
+        <div class="status" id="lookup-status"></div>
+        <div class="variants" id="lookup-variants"></div>
+      </div>
+
+      <div class="pane" id="pane-manual">
+        <div class="field">
+          <label>Reg No (required)</label>
+          <input type="text" id="m-plate" placeholder="241-C-11814" readonly />
+        </div>
+        <div class="field">
+          <label>Make</label>
+          <input type="text" id="m-make" placeholder="Toyota" />
+        </div>
+        <div class="field">
+          <label>Model</label>
+          <input type="text" id="m-model" placeholder="Yaris" />
+        </div>
+        <div class="field">
+          <label>Customer name</label>
+          <input type="text" id="m-cust" placeholder="" />
+        </div>
+        <div class="field">
+          <label>Customer phone</label>
+          <input type="tel" id="m-phone" placeholder="" />
+        </div>
+        <div class="status" id="manual-status"></div>
+        <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+          <button id="go-btn">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const grid = document.getElementById("grid");
+    const statusEl = document.getElementById("status");
+    const searchEl = document.getElementById("search");
+    let cars = [];
+    let lastStepA = null; // raw step-a response for the plate being added
+
+    function sanitizePlate(s) {
+      return String(s || "").trim().toUpperCase().replace(/[^A-Z0-9\-_]/g, "");
+    }
+
+    function render() {
+      const q = (searchEl.value || "").toLowerCase().trim();
+      const filtered = cars.filter(c => {
+        if (!q) return true;
+        return [c.plate, c.make, c.model, c.customer_name, c.customer_phone]
+          .some(v => String(v || "").toLowerCase().includes(q));
+      });
+      grid.innerHTML = "";
+      const emptyAdd = document.getElementById("empty-add");
+      if (!filtered.length) {
+        if (q) {
+          // A plate was typed but nothing matches — offer to add it.
+          statusEl.textContent = "No matching car.";
+          document.getElementById("add-plate").textContent = `"${searchEl.value.trim().toUpperCase()}"`;
+          emptyAdd.style.display = "";
+        } else {
+          statusEl.textContent = cars.length ? "No matches." : "No cars yet — type a plate to add one.";
+          emptyAdd.style.display = "none";
+        }
+        return;
+      }
+      statusEl.textContent = "";
+      emptyAdd.style.display = "none";
+      filtered.forEach(c => {
+        const a = document.createElement("a");
+        a.className = "car";
+        a.href = `/car.html?plate=${encodeURIComponent(c.plate)}`;
+        const lastJob = c.last_job_ms
+          ? new Date(c.last_job_ms).toLocaleDateString()
+          : "-";
+        const ver = c.photo_updated_ms || 0;
+        const thumbUrl = c.photo ? `/api/cars/${encodeURIComponent(c.plate)}/photo/thumb?v=${ver}` : "";
+        const fullUrl = c.photo ? `/api/cars/${encodeURIComponent(c.plate)}/photo?v=${ver}` : "";
+        // Small image = lightweight thumbnail; full-quality image loads only on hover.
+        const thumbHtml = c.photo
+          ? `<img class="thumb-small" src="${thumbUrl}" alt="" loading="lazy">
+             <img class="thumb-big" data-full="${fullUrl}" alt="" loading="lazy">`
+          : `<div class="thumb-none">no image</div>`;
+        a.innerHTML = `
+          ${thumbHtml}
+          <div class="info">
+            <div class="plate">${c.plate}</div>
+            <div class="mm">${c.make || ""} ${c.model || ""}</div>
+            ${c.customer_name || c.customer_phone
+              ? `<div class="cust">${c.customer_name || ""} ${c.customer_phone ? "&middot; " + c.customer_phone : ""}</div>`
+              : ""}
+            <div class="meta" style="margin-top:auto;">
+              <span>${c.job_count} job${c.job_count === 1 ? "" : "s"}</span>
+              <span>${lastJob}</span>
+            </div>
+          </div>
+        `;
+        // Load the full-quality image only the first time the card is hovered.
+        const big = a.querySelector(".thumb-big");
+        if (big) {
+          a.addEventListener("mouseenter", () => {
+            if (!big.getAttribute("src") && big.dataset.full) big.src = big.dataset.full;
+          }, { once: true });
+        }
+        grid.appendChild(a);
+      });
+    }
+
+    async function load() {
+      statusEl.textContent = "Loading...";
+      grid.innerHTML = "";
+      try {
+        const res = await fetch("/api/cars");
+        const data = await res.json();
+        cars = data.items || [];
+        render();
+      } catch (e) {
+        statusEl.textContent = "Error: " + e;
+      }
+    }
+
+    searchEl.addEventListener("input", () => {
+      const pos = searchEl.selectionStart;
+      searchEl.value = searchEl.value.toUpperCase();
+      try { searchEl.setSelectionRange(pos, pos); } catch (_) {}
+      render();
+    });
+
+    // Modal handling
+    const modal = document.getElementById("modal");
+    const addBtn = document.getElementById("add-btn");
+    const goBtn = document.getElementById("go-btn");
+    const tabs = document.querySelectorAll(".tab");
+
+    function openModal() {
+      modal.classList.add("open");
+      document.getElementById("lookup-plate").value = "";
+      document.getElementById("lookup-status").textContent = "";
+      document.getElementById("lookup-status").classList.remove("err");
+      document.getElementById("lookup-variants").innerHTML = "";
+      ["m-plate","m-make","m-model","m-cust","m-phone"].forEach(id => document.getElementById(id).value = "");
+      document.getElementById("manual-status").textContent = "";
+      document.getElementById("manual-status").classList.remove("err");
+      // Always start on Lookup tab, with Manual hidden until mpmoil finds nothing
+      tabs.forEach(x => x.classList.remove("active"));
+      document.querySelector('.tab[data-pane="lookup"]').classList.add("active");
+      document.querySelector('.tab[data-pane="manual"]').style.display = "none";
+      document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
+      document.getElementById("pane-lookup").classList.add("active");
+    }
+    function closeModal() { modal.classList.remove("open"); }
+    addBtn.addEventListener("click", () => {
+      const query = (searchEl.value || "").trim().toUpperCase();
+      openModal();
+      if (query) {
+        // Carry the search query into the lookup field; if it doesn't match any
+        // car we already have, fire the mpmoil request straight away.
+        const lookupPlate = document.getElementById("lookup-plate");
+        lookupPlate.value = query;
+        const existing = findExistingCar(query);
+        if (existing) {
+          // Already in the database — jump directly to it.
+          window.location.href = `/car.html?plate=${encodeURIComponent(existing.plate)}`;
+          return;
+        }
+        runLookup();
+      }
+    });
+    modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modal.classList.contains("open")) closeModal();
+    });
+
+    tabs.forEach(t => t.addEventListener("click", () => {
+      tabs.forEach(x => x.classList.remove("active"));
+      t.classList.add("active");
+      document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
+      document.getElementById("pane-" + t.dataset.pane).classList.add("active");
+    }));
+
+    // Lookup
+    const lookupStatus = document.getElementById("lookup-status");
+    const lookupVariants = document.getElementById("lookup-variants");
+
+    function yearRange(v) {
+      const fromRaw = v.year_from  ?? v.from_year ?? v.year_start ?? v.from ?? null;
+      const toRaw   = v.year_until ?? v.year_to   ?? v.to_year    ?? v.year_end ?? v.to ?? null;
+      const from = (fromRaw && Number(fromRaw)) ? fromRaw : null;
+      const to   = (toRaw   && Number(toRaw))   ? toRaw   : null;
+      // Two years joined by a dash; a single year when only one is known.
+      if (from && to && String(from) !== String(to)) return ` ${from} - ${to}`;
+      if (from) return ` ${from}`;
+      if (to)   return ` ${to}`;
+      return "";
+    }
+
+    function switchToManual(plateValue, message) {
+      // Reveal and activate the Manual tab (only happens when mpmoil finds nothing)
+      document.querySelector('.tab[data-pane="manual"]').style.display = "";
+      tabs.forEach(x => x.classList.remove("active"));
+      document.querySelector('.tab[data-pane="manual"]').classList.add("active");
+      document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
+      document.getElementById("pane-manual").classList.add("active");
+      // Carry the typed plate over
+      if (plateValue) {
+        document.getElementById("m-plate").value = plateValue;
+      }
+      const status = document.getElementById("manual-status");
+      status.textContent = message || "Vehicle not found on mpmoil.ie — please enter details manually.";
+      status.classList.add("err");
+      // Focus first empty field
+      const target = document.getElementById("m-make").value
+        ? document.getElementById("m-model")
+        : document.getElementById("m-make");
+      target.focus();
+    }
+
+    function looksLikeNotFound(text) {
+      if (!text) return false;
+      const t = String(text).toLowerCase();
+      return t.includes("could not")
+          || t.includes("not find")
+          || t.includes("not found")
+          || t.includes("no match")
+          || t.includes("could you please identify")
+          || t.includes("manual lookup");
+    }
+
+    // Pull the engine oil fill amount (litres) out of an mpmoil advice HTML blob.
+    // The Engine is the first component; its "advice-amount" table holds e.g. "3.5 liter".
+    function extractEngineOilLitres(html) {
+      if (!html) return null;
+      const m = html.match(/<h3>[^<]*engine[^<]*<\/h3>[\s\S]*?class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
+      if (m) return m[1].replace(",", ".");
+      const m2 = html.match(/class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
+      return m2 ? m2[1].replace(",", ".") : null;
+    }
+
+    // Pull the engine name/code (e.g. "Engine Z14XEP") from the advice HTML.
+    function extractEngineName(html) {
+      if (!html) return null;
+      const m = html.match(/<h3>\s*([^<]*?engine[^<]*?)\s*<\/h3>/i);
+      if (m) return m[1].trim();
+      const m2 = html.match(/<h3>\s*([^<]*?)\s*<\/h3>/i);
+      return m2 ? m2[1].trim() : null;
+    }
+
+    // For 2+ variants, fetch each variant's engine-oil amount and show it on the row.
+    async function fillOilAmounts(rows, plate) {
+      const results = await Promise.all(rows.map(async (row) => {
+        const v = row.v;
+        const token = v.slug_or_id || v.slug || v.id || v.code;
+        const oilEl = row.div.querySelector(".v-oil");
+        if (!token) { oilEl.textContent = "—"; oilEl.classList.add("unknown"); return null; }
+        try {
+          const r = await fetch(`/api/step-b?plate=${encodeURIComponent(plate)}&token=${encodeURIComponent(token)}`);
+          if (!r.ok) { oilEl.textContent = "?"; oilEl.classList.add("unknown"); return null; }
+          const j = await r.json();
+          const html = (j && (j.html || (j.data && j.data.html))) || "";
+          const engine = extractEngineName(html);
+          const engEl = row.div.querySelector(".v-engine");
+          if (engEl && engine) {
+            engEl.textContent = engine.replace(/^engine\s+/i, "") || engine;
+            engEl.title = engine;
+          }
+          const litres = extractEngineOilLitres(html);
+          if (litres) { oilEl.textContent = `${litres} L`; oilEl.classList.remove("unknown"); return litres; }
+          oilEl.textContent = "?"; oilEl.classList.add("unknown"); return null;
+        } catch (_) {
+          oilEl.textContent = "?"; oilEl.classList.add("unknown"); return null;
+        }
+      }));
+      // All oil amounts are in — unlock every variant for selection.
+      rows.forEach(r => r.div.classList.remove("disabled"));
+      const known = results.filter(Boolean);
+      if (known.length >= 2) {
+        const distinct = [...new Set(known)];
+        if (distinct.length === 1) {
+          lookupStatus.textContent = `All variants take ${distinct[0]} L — pick any.`;
+          lookupStatus.classList.remove("err");
+        } else {
+          lookupStatus.textContent = `Engine oil differs between variants (${distinct.join(" / ")} L) — check the actual engine before choosing.`;
+          lookupStatus.classList.add("err");
+        }
+      } else {
+        lookupStatus.textContent = "Select the matching variant to save the car:";
+        lookupStatus.classList.remove("err");
+      }
+    }
+
+    async function runLookup() {
+      const plate = document.getElementById("lookup-plate").value.trim().toUpperCase();
+      if (!plate) { lookupStatus.textContent = "Enter a plate first."; return; }
+
+      // 1) Already in our database? Skip mpmoil and jump straight to the car.
+      const existing = findExistingCar(plate);
+      if (existing) {
+        lookupStatus.textContent = `Car ${existing.plate} already in database — opening...`;
+        lookupStatus.classList.remove("err");
+        setTimeout(() => {
+          window.location.href = `/car.html?plate=${encodeURIComponent(existing.plate)}`;
+        }, 250);
+        return;
+      }
+
+      lookupStatus.textContent = "Looking up on mpmoil.ie...";
+      lookupStatus.classList.remove("err");
+      lookupVariants.innerHTML = "";
+      showOverlay(`Searching mpmoil.ie for ${plate}…`);
+      try {
+        const res = await fetch(`/api/step-a?plate=${encodeURIComponent(plate)}`);
+        const rawText = await res.text();
+        if (!res.ok) {
+          switchToManual(plate, `mpmoil.ie returned an error (${res.status}). Enter details manually.`);
+          return;
+        }
+        // Some mpmoil "not found" responses come back as 200 with an error body
+        let json;
+        try {
+          json = JSON.parse(rawText);
+        } catch (_) {
+          // Non-JSON body — treat as a fault message
+          if (looksLikeNotFound(rawText)) {
+            switchToManual(plate);
+          } else {
+            switchToManual(plate, "Unexpected response from mpmoil.ie. Enter details manually.");
+          }
+          return;
+        }
+        lastStepA = json; // keep the full step-a result to store with the car
+        // Detect explicit error fields
+        const errorMsg = json && (json.error || json.message || json.err);
+        if (errorMsg && looksLikeNotFound(errorMsg)) {
+          switchToManual(plate);
+          return;
+        }
+        const arr = Array.isArray(json) ? json
+          : (json.items || json.variants || json.data || []);
+        if (!arr.length) {
+          switchToManual(plate);
+          return;
+        }
+        const multi = arr.length >= 2;
+        lookupStatus.textContent = multi
+          ? `Found ${arr.length} variants — checking engine oil for each…`
+          : `Found 1 variant. Select it to save the car:`;
+        const rows = arr.map(v => {
+          const baseName = v.name || v.title || v.label || v.model || v.slug || v.id || JSON.stringify(v);
+          const label = baseName + yearRange(v);
+          const div = document.createElement("div");
+          // For 2+ variants, keep rows locked until every oil amount has loaded.
+          div.className = "variant" + (multi ? " disabled" : "");
+          div.innerHTML = `<span class="v-label"></span>${multi ? `<span class="v-right"><span class="v-engine"></span><span class="v-oil">…</span></span>` : ""}`;
+          div.querySelector(".v-label").textContent = label;
+          div.addEventListener("click", () => createFromLookup(plate, v, label));
+          lookupVariants.appendChild(div);
+          return { v, div, label };
+        });
+        // Only check oil per-variant when there is a real choice to make (2+).
+        if (multi) fillOilAmounts(rows, plate);
+      } catch (e) {
+        switchToManual(plate, "Network error: " + e.message + ". Enter details manually.");
+      } finally {
+        hideOverlay();
+      }
+    }
+
+    // -------- plate autocomplete (lookup tab) --------
+    const lookupPlateEl = document.getElementById("lookup-plate");
+    const suggestionsEl = document.getElementById("plate-suggestions");
+    const mPlateEl = document.getElementById("m-plate");
+    let suggIndex = -1;
+    let suggList = [];
+
+    function normPlate(s) {
+      return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+    function findExistingCar(typed) {
+      const target = normPlate(typed);
+      if (!target) return null;
+      return cars.find(c => normPlate(c.plate) === target) || null;
+    }
+    function matchingCars(typed) {
+      const target = normPlate(typed);
+      if (target.length < 5) return [];
+      return cars
+        .filter(c => normPlate(c.plate).includes(target))
+        .slice(0, 8);
+    }
+    function renderSuggestions() {
+      suggestionsEl.innerHTML = "";
+      if (!suggList.length) {
+        suggestionsEl.classList.remove("open");
+        return;
+      }
+      suggList.forEach((c, i) => {
+        const d = document.createElement("div");
+        d.className = "ps-item" + (i === suggIndex ? " active" : "");
+        d.innerHTML = `
+          <span class="ps-plate">${c.plate}</span>
+          <span class="ps-mm">${c.make || ""} ${c.model || ""}</span>
+        `;
+        d.addEventListener("mousedown", (e) => {
+          e.preventDefault(); // keep focus so blur doesn't fire first
+          window.location.href = `/car.html?plate=${encodeURIComponent(c.plate)}`;
+        });
+        suggestionsEl.appendChild(d);
+      });
+      suggestionsEl.classList.add("open");
+    }
+
+    lookupPlateEl.addEventListener("input", () => {
+      // Force uppercase, preserving caret position
+      const pos = lookupPlateEl.selectionStart;
+      lookupPlateEl.value = lookupPlateEl.value.toUpperCase();
+      lookupPlateEl.setSelectionRange(pos, pos);
+      suggList = matchingCars(lookupPlateEl.value);
+      suggIndex = -1;
+      renderSuggestions();
+    });
+
+    lookupPlateEl.addEventListener("focus", () => {
+      suggList = matchingCars(lookupPlateEl.value);
+      renderSuggestions();
+    });
+    lookupPlateEl.addEventListener("blur", () => {
+      // Delay so a click can register first
+      setTimeout(() => suggestionsEl.classList.remove("open"), 120);
+    });
+
+    lookupPlateEl.addEventListener("keydown", (e) => {
+      if (suggestionsEl.classList.contains("open") && suggList.length) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          suggIndex = (suggIndex + 1) % suggList.length;
+          renderSuggestions();
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          suggIndex = (suggIndex - 1 + suggList.length) % suggList.length;
+          renderSuggestions();
+          return;
+        }
+        if (e.key === "Enter" && suggIndex >= 0) {
+          e.preventDefault();
+          const pick = suggList[suggIndex];
+          window.location.href = `/car.html?plate=${encodeURIComponent(pick.plate)}`;
+          return;
+        }
+        if (e.key === "Escape") {
+          suggestionsEl.classList.remove("open");
+          return;
+        }
+      }
+      if (e.key === "Enter") { e.preventDefault(); runLookup(); }
+    });
+
+    // Same uppercase rule on the Manual plate input
+    mPlateEl.addEventListener("input", () => {
+      const pos = mPlateEl.selectionStart;
+      mPlateEl.value = mPlateEl.value.toUpperCase();
+      mPlateEl.setSelectionRange(pos, pos);
+    });
+
+    function toStr(v) {
+      if (v == null) return "";
+      if (typeof v === "string") return v;
+      if (typeof v === "number" || typeof v === "boolean") return String(v);
+      if (typeof v === "object") {
+        return v.name || v.title || v.label || v.brand || v.model || v.text || "";
+      }
+      return String(v);
+    }
+
+    async function createFromLookup(plate, variant, label) {
+      const cleanPlate = sanitizePlate(plate);
+      const make = toStr(variant.make) || toStr(variant.brand) || (label.split(" ")[0] || "");
+      const model = toStr(variant.model) || (label.split(" ").slice(1).join(" ") || "");
+      // Detect fuel type from the variant name and surrounding text.
+      // Returns "diesel" / "petrol" / "hybrid" / "petrol-electric" / "electric" / "unknown".
+      const fuelType = (typeof window.detectFuelType === "function")
+        ? window.detectFuelType(variant, label, model)
+        : "unknown";
+      const body = {
+        plate: cleanPlate,
+        reg_no: plate,
+        make: make,
+        model: model,
+        customer_name: "",
+        customer_phone: "",
+        fuel_type: fuelType,
+        mpmoil_variant: variant,
+        mpmoil_step_a: lastStepA,
+        mpmoil_years: yearRange(variant).trim(), // exact years shown for the chosen variant
+        source: "mpmoil",
+      };
+      lookupStatus.textContent = "Saving and fetching oil for this engine...";
+      showOverlay("Saving car and fetching oil for the chosen engine…");
+      try {
+        const r1 = await fetch(`/api/cars/${encodeURIComponent(cleanPlate)}`, {
+          method: "PUT",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        if (!r1.ok) throw new Error(await r1.text());
+        // Archive oil for ONLY the chosen variant (not every modification).
+        const token = variant.slug_or_id || variant.slug || variant.id || variant.code;
+        if (token) {
+          try {
+            const rb = await fetch(`/api/step-b?plate=${encodeURIComponent(plate)}&token=${encodeURIComponent(token)}`);
+            if (rb.ok) {
+              const stepB = await rb.json();
+              const snapshot = {
+                title: label,
+                token: String(token),
+                plate: cleanPlate,
+                fetched_ms: Date.now(),
+                variant: variant,
+                data: stepB,
+                file_name: label,
+              };
+              const rs = await fetch(`/api/cars/${encodeURIComponent(cleanPlate)}/oil`, {
+                method: "POST",
+                headers: {"content-type": "application/json"},
+                body: JSON.stringify(snapshot),
+              });
+              if (rs.ok) lookupStatus.textContent = "Saved with oil data for the chosen engine.";
+            }
+          } catch (_) { /* car is saved; oil is best-effort */ }
+        }
+        // Also archive step-a (the full list of variants found) so it's visible.
+        if (lastStepA) {
+          try {
+            await fetch(`/api/cars/${encodeURIComponent(cleanPlate)}/oil`, {
+              method: "POST",
+              headers: {"content-type": "application/json"},
+              body: JSON.stringify({
+                title: "Step A — all variants",
+                plate: cleanPlate,
+                fetched_ms: Date.now(),
+                data: lastStepA,
+                file_name: "_step-a",
+              }),
+            });
+          } catch (_) {}
+        }
+        setTimeout(() => {
+          window.location.href = `/car.html?plate=${encodeURIComponent(cleanPlate)}`;
+        }, 600);
+      } catch (e) {
+        lookupStatus.textContent = "Error: " + e.message;
+        lookupStatus.classList.add("err");
+      } finally {
+        hideOverlay();
+      }
+    }
+
+    // Unified "go" button: searches mpmoil on Lookup tab, saves on Manual tab
+    goBtn.addEventListener("click", async () => {
+      const activeTab = document.querySelector(".tab.active").dataset.pane;
+      if (activeTab === "lookup") {
+        await runLookup();
+        return;
+      }
+      // Manual save
+      const plateRaw = document.getElementById("m-plate").value.trim();
+      const plate = sanitizePlate(plateRaw);
+      if (!plate) {
+        document.getElementById("manual-status").textContent = "Reg No is required.";
+        return;
+      }
+      const body = {
+        plate,
+        reg_no: plateRaw,
+        make: document.getElementById("m-make").value.trim(),
+        model: document.getElementById("m-model").value.trim(),
+        customer_name: document.getElementById("m-cust").value.trim(),
+        customer_phone: document.getElementById("m-phone").value.trim(),
+        source: "manual",
+      };
+      showOverlay("Saving…");
+      try {
+        const res = await fetch(`/api/cars/${encodeURIComponent(plate)}`, {
+          method: "PUT",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        closeModal();
+        window.location.href = `/car.html?plate=${encodeURIComponent(plate)}`;
+      } catch (e) {
+        document.getElementById("manual-status").textContent = "Error: " + e.message;
+      } finally {
+        hideOverlay();
+      }
+    });
+
+    load();
+  </script>
+</body>
+
+</html>

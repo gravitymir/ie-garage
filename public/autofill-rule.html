@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Autofill Rule - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center;
+      gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 14px; max-width: 760px; margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 10px; font-size: 1rem; color: #555; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+    .field label { font-size: 12px; color: #555; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    input[type="text"], textarea, select {
+      font-family: inherit; padding: 6px 8px; border: 1px solid #bbb;
+      border-radius: 4px; font-size: 14px; width: 100%;
+    }
+    select { height: 32px; background-color: #fff; }
+    textarea { min-height: 60px; resize: vertical; }
+
+    /* Applies-to checkbox row — horizontal, wraps onto a new line when needed. */
+    .fuel-checks {
+      display: flex; flex-wrap: wrap; gap: 6px 12px;
+      padding: 4px 0;
+    }
+    .fuel-check {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px;
+      border: 1px solid #bbb; border-radius: 16px;
+      font-size: 13px; cursor: pointer;
+      user-select: none;
+      background: #fff;
+    }
+    .fuel-check input { margin: 0; cursor: pointer; }
+    .fuel-check:has(input:checked) {
+      background: #e3eef7; border-color: #3275ac; color: #1d4d77;
+      font-weight: 600;
+    }
+    .fuel-check.fc-any:has(input:checked) {
+      background: #ececec; border-color: #666; color: #333;
+    }
+    /* When "Any" is checked the specific fuel options are hidden — they're
+       irrelevant. Untick "Any" to reveal them. */
+    .fuel-checks.any-on .fuel-check:not(.fc-any) { display: none; }
+
+    /* Engine-oil block */
+    .oils-toggle {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 14px; cursor: pointer; user-select: none;
+    }
+    .oils-toggle input { margin: 0; cursor: pointer; }
+    #oils-extra {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px dashed #ccc;
+      border-radius: 6px;
+      background: #fafafa;
+    }
+    #oils-extra.disabled { opacity: 0.45; pointer-events: none; }
+    .oils-extra-row {
+      display: flex; align-items: center; gap: 8px;
+      flex-wrap: wrap; font-size: 13px; color: #444;
+    }
+    #oils-older-than { width: 70px; }
+    .oils-extra-fields {
+      display: grid;
+      grid-template-columns: minmax(0,2.2fr) minmax(0,1.6fr) minmax(0,1fr) minmax(0,0.6fr);
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .oef { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .oef label { font-size: 11px; color: #555; }
+    .oef input { padding: 6px 8px; font-size: 13px; }
+    .oef input[readonly] { background: #f0f0f0; color: #666; cursor: default; text-align: center; }
+    .oef .oils-qty-note {
+      font-size: 11px; color: #888;
+      padding: 6px 8px;
+      background: #fff; border: 1px dashed #ccc; border-radius: 4px;
+      text-align: center;
+    }
+    @media (max-width: 600px) {
+      .oils-extra-fields { grid-template-columns: 1fr 1fr; }
+    }
+
+    button.primary {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #3275ac; background: #3275ac; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button.danger {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #c33; background: #c33; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button.secondary {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #3275ac; background: #fff; color: #3275ac;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button:hover { opacity: 0.9; }
+    .row-btns { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+
+    .parts-table {
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .parts-head, .parts-row {
+      display: grid;
+      grid-template-columns: minmax(0,2.2fr) minmax(0,1.6fr) minmax(0,0.9fr) minmax(0,0.9fr);
+      gap: 6px;
+      align-items: center;
+    }
+    .parts-head {
+      font-size: 11px; color: #555; padding: 0 4px;
+    }
+    .parts-row input { padding: 6px 8px; font-size: 13px; }
+    .parts-row .number-note {
+      font-size: 11px; color: #888; padding: 6px 8px;
+      background: #fafafa; border: 1px dashed #ccc; border-radius: 4px;
+      text-align: center;
+    }
+
+    .status { font-size: 13px; color: #555; margin: 6px 0; }
+    .status.err { color: #c33; }
+    .status.ok { color: #393; }
+
+    .hint {
+      font-size: 11px; color: #888; margin-top: 2px;
+    }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/autofill.html">&larr; All Rules</a>
+    <h1 id="title">Add Rule</h1>
+  </div>
+
+  <div class="card">
+    <h2>Rule</h2>
+    <div class="field">
+      <label>Name / trigger phrase</label>
+      <input type="text" id="rule-name" placeholder="full service" />
+      <div class="hint">When a job's "work description" matches this (case-insensitive), the parts below are appended.</div>
+    </div>
+    <div class="field">
+      <label>Applies to (fuel type)</label>
+      <div class="fuel-checks" id="rule-applies-to">
+        <label class="fuel-check fc-any"><input type="checkbox" value="any" data-any />Any engine type</label>
+        <label class="fuel-check"><input type="checkbox" value="petrol" />Petrol</label>
+        <label class="fuel-check"><input type="checkbox" value="diesel" />Diesel</label>
+        <label class="fuel-check"><input type="checkbox" value="petrol-electric" />Petrol/Electric</label>
+        <label class="fuel-check"><input type="checkbox" value="diesel-electric" />Diesel/Electric</label>
+        <label class="fuel-check"><input type="checkbox" value="electric" />Electric</label>
+      </div>
+      <div class="hint">Tick one or more types this rule targets. "Any" includes all — selecting it clears the specific ticks. Leaving everything unticked also means "any car".</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Parts to add</h2>
+    <div class="parts-head">
+      <div>Part used</div>
+      <div>Number</div>
+      <div>Quantity</div>
+      <div>Unit</div>
+    </div>
+    <datalist id="unit-suggestions">
+      <option value="pcs"></option>
+      <option value="L"></option>
+      <option value="ml"></option>
+      <option value="kg"></option>
+      <option value="g"></option>
+      <option value="box"></option>
+      <option value="kit"></option>
+      <option value="set"></option>
+      <option value="pair"></option>
+      <option value="m"></option>
+    </datalist>
+    <div class="parts-table" id="parts-body"></div>
+  </div>
+
+  <div class="card">
+    <h2>Engine oil</h2>
+    <label class="oils-toggle">
+      <input type="checkbox" id="oils-enabled" />
+      Add engine oils from this car's MPM archive
+    </label>
+    <div class="hint" style="margin-top:4px;">When ticked, every engine-oil product MPM recommends for this car is appended to the job's parts (one row per product). Numbers come from the MPM archive too.</div>
+
+    <div id="oils-extra">
+      <div class="oils-extra-row">
+        <span>If the car is older than</span>
+        <input type="number" id="oils-older-than" min="0" placeholder="6" />
+        <span>years, also append one row:</span>
+      </div>
+      <div class="oils-extra-fields">
+        <div class="oef">
+          <label>Part used</label>
+          <input type="text" id="oils-older-used" placeholder="e.g. 5W-30 mineral oil" />
+        </div>
+        <div class="oef">
+          <label>Number</label>
+          <input type="text" id="oils-older-number" placeholder="e.g. MOBIL-5W30-4L" />
+        </div>
+        <div class="oef">
+          <label>Quantity</label>
+          <div class="oils-qty-note">auto from MPM archive</div>
+        </div>
+        <div class="oef oef-narrow">
+          <label>Unit</label>
+          <input type="text" value="L" readonly tabindex="-1" />
+        </div>
+      </div>
+      <div class="hint">Optional. Leave the year empty to skip this extra rule. Quantity is read from the engine-oil capacity in the car's MPM archive at autofill time; unit is always litres.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row-btns">
+      <button class="primary" id="save-btn">Save</button>
+      <button class="danger" id="delete-btn" style="display:none;">Delete rule</button>
+    </div>
+    <div class="status" id="rule-status"></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    let ruleId = params.get("id") || "";
+    const titleEl = document.getElementById("title");
+    const deleteBtn = document.getElementById("delete-btn");
+    const statusEl = document.getElementById("rule-status");
+    const partsBody = document.getElementById("parts-body");
+
+    function applyMode() {
+      titleEl.textContent = ruleId ? "Edit Rule" : "Add Rule";
+      deleteBtn.style.display = ruleId ? "" : "none";
+    }
+
+    // ---------- Applies to (fuel type) checkboxes ----------
+    const appliesBox = document.getElementById("rule-applies-to");
+    const appliesBoxes = () => Array.from(appliesBox.querySelectorAll('input[type="checkbox"]'));
+    const specificBoxes = () => appliesBoxes().filter(c => !c.hasAttribute("data-any"));
+    const anyBox = () => appliesBox.querySelector('input[data-any]');
+
+    // While "Any" is ticked the specific fuel options are hidden entirely.
+    // Untick Any to reveal them; re-tick to clear and hide again.
+    function syncAnyVisibility() {
+      const a = anyBox();
+      const on = !!(a && a.checked);
+      appliesBox.classList.toggle("any-on", on);
+      if (on) {
+        // Always clear specifics when Any is on so they can't sneak into the
+        // saved value while hidden.
+        specificBoxes().forEach(c => { c.checked = false; });
+      }
+    }
+
+    // "Any" is mutually exclusive with the specific types: ticking Any clears
+    // and hides the others; ticking any specific unchecks Any (revealing the
+    // rest). With nothing checked the rule is also treated as "applies to any
+    // car" on the backend.
+    //
+    // Extra rule: if the user manually ticks *every* specific option, that's
+    // semantically identical to "Any" — we fold it back to the Any state
+    // automatically (tick Any, clear specifics, hide them).
+    appliesBox.addEventListener("change", (e) => {
+      if (!(e.target instanceof HTMLInputElement)) return;
+      if (e.target.hasAttribute("data-any")) {
+        syncAnyVisibility();
+      } else if (e.target.checked) {
+        const a = anyBox();
+        if (a) a.checked = false;
+        // If after this tick *all* specific options are now checked, collapse
+        // the selection back to Any.
+        const specs = specificBoxes();
+        if (specs.length && specs.every(c => c.checked)) {
+          if (a) a.checked = true;
+          // syncAnyVisibility will clear the specifics for us.
+        }
+        syncAnyVisibility();
+      }
+    });
+
+    function applyAppliesToToUI(value) {
+      // Accept both the new array shape and the legacy single-string shape.
+      let arr;
+      if (Array.isArray(value)) arr = value.map(s => String(s).toLowerCase());
+      else if (typeof value === "string" && value.trim()) arr = [value.trim().toLowerCase()];
+      else arr = [];
+      const set = new Set(arr);
+      // "any" or empty → only the Any box ticked. Otherwise tick the matches.
+      const isAny = set.size === 0 || set.has("any");
+      appliesBoxes().forEach(c => {
+        if (c.hasAttribute("data-any")) c.checked = isAny;
+        else c.checked = !isAny && set.has(c.value);
+      });
+      syncAnyVisibility();
+    }
+
+    function collectAppliesTo() {
+      const a = anyBox();
+      if (a && a.checked) return [];          // empty array = applies to every car
+      const picked = specificBoxes().filter(c => c.checked).map(c => c.value);
+      return picked;                          // [] also means "any" (lenient)
+    }
+    // Default: Any ticked on a brand-new rule.
+    applyAppliesToToUI([]);
+
+    // ---------- Engine-oil block ----------
+    const oilsEnabledEl = document.getElementById("oils-enabled");
+    const oilsExtraEl   = document.getElementById("oils-extra");
+    const oilsYearEl    = document.getElementById("oils-older-than");
+    const oilsUsedEl    = document.getElementById("oils-older-used");
+    const oilsNumberEl  = document.getElementById("oils-older-number");
+
+    function syncOilsExtraVis() {
+      oilsExtraEl.classList.toggle("disabled", !oilsEnabledEl.checked);
+    }
+    oilsEnabledEl.addEventListener("change", () => {
+      // When the user ticks the master checkbox, populate sensible defaults
+      // into any empty sub-rule fields so they don't start from scratch.
+      // Already-filled fields are left alone (the user's input wins).
+      if (oilsEnabledEl.checked) {
+        if (!oilsYearEl.value.trim())   oilsYearEl.value   = "6";
+        if (!oilsUsedEl.value.trim())   oilsUsedEl.value   = "engine oil";
+        if (!oilsNumberEl.value.trim()) oilsNumberEl.value = "5W-30";
+      }
+      syncOilsExtraVis();
+    });
+    syncOilsExtraVis();
+
+    function applyOilsToUI(oils) {
+      const o = (oils && typeof oils === "object") ? oils : {};
+      oilsEnabledEl.checked = !!o.enabled;
+      oilsYearEl.value = (o.older_than_years != null && o.older_than_years !== "") ? o.older_than_years : "";
+      // older_specific can be either a plain string (legacy: just the part name)
+      // or a {used, number} object (current shape).
+      const spec = o.older_specific;
+      if (typeof spec === "string") {
+        oilsUsedEl.value = spec;
+        oilsNumberEl.value = "";
+      } else if (spec && typeof spec === "object") {
+        oilsUsedEl.value = spec.used || "";
+        oilsNumberEl.value = spec.number || "";
+      } else {
+        oilsUsedEl.value = "";
+        oilsNumberEl.value = "";
+      }
+      syncOilsExtraVis();
+    }
+
+    function collectOils() {
+      const yearRaw = oilsYearEl.value.trim();
+      const yearNum = yearRaw ? Number(yearRaw) : null;
+      return {
+        enabled: !!oilsEnabledEl.checked,
+        older_than_years: (yearNum && yearNum > 0) ? yearNum : null,
+        older_specific: {
+          used: oilsUsedEl.value.trim(),
+          number: oilsNumberEl.value.trim(),
+        },
+      };
+    }
+
+    // Invariant: every visible row except the *last* has a non-empty "Part used".
+    // The last row is always empty — it's the slot for adding the next part.
+    // - Type into the last row's "Part used" → a fresh empty row pops up below.
+    // - Clear a non-last row's "Part used" → that row gets collapsed away on blur.
+    function normalizeRows() {
+      const rows = Array.from(partsBody.querySelectorAll(".parts-row"));
+      // Drop every empty row that isn't the last one.
+      for (let i = 0; i < rows.length - 1; i++) {
+        const used = rows[i].querySelector(".p-used");
+        if (used && !used.value.trim()) rows[i].remove();
+      }
+      // Make sure at least one row exists.
+      if (!partsBody.querySelector(".parts-row")) {
+        makeRow();
+        return;
+      }
+      // Make sure the last row is empty (i.e. a slot waiting for input).
+      const after = Array.from(partsBody.querySelectorAll(".parts-row"));
+      const last = after[after.length - 1];
+      if (last.querySelector(".p-used").value.trim()) makeRow();
+    }
+
+    function makeRow(used, quantity, unit) {
+      const div = document.createElement("div");
+      div.className = "parts-row";
+      div.innerHTML = `
+        <input type="text" class="p-used" placeholder="oil filter" />
+        <div class="number-note" title="At autofill time, the part number is taken from the most recent finished job for this car (if any).">auto from history</div>
+        <input type="text" class="p-qty" />
+        <input type="text" class="p-unit" list="unit-suggestions" />
+      `;
+      const usedInp = div.querySelector(".p-used");
+      usedInp.value = used || "";
+      // Defaults: Quantity = "1", Unit = "pcs". They are real values (not just
+      // placeholders), so collectParts() picks them up even if the user never
+      // touched these fields.
+      div.querySelector(".p-qty").value  = (quantity != null && quantity !== "") ? quantity : "1";
+      div.querySelector(".p-unit").value = (unit != null && unit !== "")         ? unit     : "pcs";
+      // Live: if typing into the LAST row's "Part used" makes it non-empty,
+      // a fresh empty row appears right below (so there's always one to fill).
+      usedInp.addEventListener("input", () => {
+        const isLast = div === partsBody.lastElementChild;
+        if (isLast && usedInp.value.trim() !== "") makeRow();
+      });
+      // On blur: collapse empties so there's always exactly one trailing slot.
+      usedInp.addEventListener("change", normalizeRows);
+      partsBody.appendChild(div);
+      return div;
+    }
+
+    async function load() {
+      applyMode();
+      if (!ruleId) {
+        // If we came here from the list page's "+ Add Rule" with a search query,
+        // pre-fill the name/trigger field with it.
+        const preset = (params.get("name") || "").trim();
+        if (preset) document.getElementById("rule-name").value = preset;
+        // empty form: start with one empty row
+        makeRow();
+        return;
+      }
+      try {
+        const res = await fetch(`/api/autofill/rules/${encodeURIComponent(ruleId)}`);
+        if (!res.ok) throw new Error(await res.text());
+        const r = await res.json();
+        // One input drives both name and trigger; prefer trigger if set, otherwise name.
+        document.getElementById("rule-name").value = (r.trigger || r.name || "");
+        applyAppliesToToUI(r.applies_to);
+        applyOilsToUI(r.oils);
+        const parts = Array.isArray(r.parts) ? r.parts : [];
+        if (!parts.length) { makeRow(); }
+        else { parts.forEach(p => makeRow(p.used, p.quantity, p.unit)); }
+      } catch (e) {
+        statusEl.textContent = "Error: " + e.message;
+        statusEl.className = "status err";
+        makeRow();
+      }
+    }
+
+    function collectParts() {
+      const rows = Array.from(partsBody.querySelectorAll(".parts-row"));
+      return rows.map(r => ({
+        used: r.querySelector(".p-used").value.trim(),
+        number: "", // resolved from history at autofill time
+        quantity: r.querySelector(".p-qty").value.trim(),
+        unit: r.querySelector(".p-unit").value.trim(),
+      })).filter(p => p.used);
+    }
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const value = document.getElementById("rule-name").value.trim();
+      const body = {
+        name: value,
+        trigger: value,
+        applies_to: collectAppliesTo(),
+        parts: collectParts(),
+        oils: collectOils(),
+      };
+      if (!value) { statusEl.textContent = "Name / trigger is required."; statusEl.className = "status err"; return; }
+
+      // Duplicate guard: another rule with the same trigger AND the same
+      // applies_to set already exists. We compare sets (order-insensitive);
+      // an empty array is the "any" set. Differently-targeted rules sharing
+      // a trigger (e.g. full service for petrol vs diesel) are NOT dupes.
+      try {
+        const all = await fetch("/api/autofill/rules").then(r => r.ok ? r.json() : { items: [] });
+        const triggerNorm = value.toLowerCase();
+        const mySet = new Set((body.applies_to || []).map(s => String(s).toLowerCase()));
+        const setKey = s => [...s].sort().join("|");
+        const myKey = setKey(mySet);
+        const dupe = (all.items || []).find(r => {
+          if (ruleId && r.id === ruleId) return false; // editing self — ignore
+          const t = String(r.trigger || r.name || "").trim().toLowerCase();
+          if (t !== triggerNorm) return false;
+          const otherArr = Array.isArray(r.applies_to) ? r.applies_to
+            : (typeof r.applies_to === "string" && r.applies_to.trim()) ? [r.applies_to.trim()]
+            : [];
+          const otherSet = new Set(otherArr.map(s => String(s).toLowerCase()));
+          return setKey(otherSet) === myKey;
+        });
+        if (dupe) {
+          const fuelLabel = mySet.size ? [...mySet].join(", ") : "any car";
+          const ok = confirm(
+            `A rule "${value}" for ${fuelLabel} already exists.\n\nSave another one anyway?`
+          );
+          if (!ok) return;
+        }
+      } catch (_) { /* if the check fails (network) don't block saving */ }
+
+      showOverlay("Saving…");
+      try {
+        let res;
+        if (ruleId) {
+          res = await fetch(`/api/autofill/rules/${encodeURIComponent(ruleId)}`, {
+            method: "PUT",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify(body),
+          });
+        } else {
+          res = await fetch(`/api/autofill/rules`, {
+            method: "POST",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify(body),
+          });
+        }
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (!ruleId && data.id) {
+          ruleId = data.id;
+          const url = new URL(window.location);
+          url.searchParams.set("id", ruleId);
+          window.history.replaceState({}, "", url);
+          applyMode();
+        }
+        statusEl.textContent = "Saved.";
+        statusEl.className = "status ok";
+        setTimeout(() => { statusEl.textContent = ""; }, 1500);
+      } catch (e) {
+        statusEl.textContent = "Error: " + e.message;
+        statusEl.className = "status err";
+      } finally {
+        hideOverlay();
+      }
+    });
+
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm("Delete this rule?")) return;
+      showOverlay("Deleting…");
+      try {
+        await fetch(`/api/autofill/rules/${encodeURIComponent(ruleId)}`, { method: "DELETE" });
+      } finally {
+        hideOverlay();
+      }
+      window.location.href = "/autofill.html";
+    });
+
+    load();
+  </script>
+</body>
+
+</html>

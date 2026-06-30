@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Store - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home { text-decoration: none; color: #3275ac; font-weight: 600; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 14px;
+    }
+    .card h2 { margin: 0 0 10px; font-size: 1rem; color: #555; }
+
+    /* Divisions sidebar */
+    .div-list { display: flex; flex-direction: column; gap: 4px; }
+    .div-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 10px; border-radius: 4px; cursor: pointer;
+      border: 1px solid transparent; font-size: 13px;
+    }
+    .div-row:hover { background: #f0f6fb; }
+    .div-row.active { background: #3275ac; color: #fff; }
+    .div-row .count { font-size: 11px; opacity: 0.7; }
+    .div-row .ed-btns { display: none; gap: 4px; }
+    .div-row:hover .ed-btns, .div-row.active .ed-btns { display: flex; }
+    .div-row .ed-btns button {
+      padding: 2px 6px; font-size: 11px;
+      background: rgba(255,255,255,0.2); color: inherit;
+      border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;
+      cursor: pointer; font-family: inherit;
+    }
+    .div-row:not(.active) .ed-btns button {
+      background: #eee; color: #333; border-color: #ccc;
+    }
+    .div-add { display: flex; gap: 6px; margin-top: 8px; }
+    .div-add input {
+      flex: 1; min-width: 0;
+      font-family: inherit; padding: 6px 8px; border: 1px solid #bbb;
+      border-radius: 4px; font-size: 13px;
+    }
+    .div-add button {
+      font-family: inherit; padding: 6px 10px;
+      border: 1px solid #3275ac; background: #3275ac; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 13px;
+    }
+
+    .toolbar {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    input[type="search"] {
+      font-family: inherit; padding: 8px 10px; border: 1px solid #bbb;
+      border-radius: 4px; font-size: 14px; flex: 1; min-width: 200px;
+    }
+    button.primary {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #3275ac; background: #3275ac; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button.primary:hover { opacity: 0.9; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .item {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      text-decoration: none; color: inherit; overflow: hidden;
+      display: flex; flex-direction: column;
+      transition: transform 0.1s, border-color 0.1s;
+      position: relative;
+    }
+    .item:hover { border-color: #3275ac; transform: translateY(-1px); }
+    .item.low { border-color: #c33; }
+    .item.low::after {
+      content: "LOW STOCK"; position: absolute; top: 6px; right: 6px;
+      background: #c33; color: #fff; font-size: 10px; font-weight: 600;
+      padding: 2px 6px; border-radius: 3px;
+    }
+    .thumb {
+      width: 100%; aspect-ratio: 4/3;
+      background: #eee center/contain no-repeat;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem; color: #999;
+    }
+    .info { padding: 10px 12px; }
+    .name { font-weight: 600; font-size: 0.95rem; }
+    .producer { color: #666; font-size: 0.78rem; }
+    .num { color: #3275ac; font-weight: 600; font-size: 0.85rem; margin-top: 2px; }
+    .stock {
+      margin-top: 6px; display: flex; gap: 8px; font-size: 0.85rem;
+      align-items: baseline;
+    }
+    .stock .cur { font-size: 1.1rem; font-weight: 900; color: #2a7; }
+    .stock .cur.low { color: #c33; }
+    .stock .range { color: #888; font-size: 0.75rem; }
+
+    .muted { color: #666; font-size: 13px; margin: 8px 0; }
+    .status { font-size: 13px; color: #555; margin: 6px 0; }
+    .status.err { color: #c33; }
+  </style>
+  <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <a class="home" href="/index.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; Home</a>
+      <h1>Store</h1>
+    </div>
+  </div>
+
+  <div class="layout">
+
+    <!-- Sidebar: divisions -->
+    <div class="card">
+      <h2>Divisions</h2>
+      <div class="div-list" id="div-list"></div>
+      <div class="div-add">
+        <input type="text" id="new-div" placeholder="New division name" />
+        <button id="add-div">+</button>
+      </div>
+      <div class="status" id="div-status"></div>
+    </div>
+
+    <!-- Main: items -->
+    <div>
+      <div class="toolbar">
+        <input type="search" id="search" placeholder="Search by name, ID, producer..." />
+        <button class="primary" id="add-item">+ Add Item</button>
+      </div>
+      <div class="muted" id="status">Loading...</div>
+      <div class="grid" id="grid"></div>
+    </div>
+
+  </div>
+
+  <script>
+    let divisions = [];
+    let items = [];
+    let activeDivision = ""; // "" = all, "_none" = without division
+
+    const divList = document.getElementById("div-list");
+    const divStatus = document.getElementById("div-status");
+    const grid = document.getElementById("grid");
+    const statusEl = document.getElementById("status");
+    const searchEl = document.getElementById("search");
+
+    function renderDivisions() {
+      divList.innerHTML = "";
+
+      const all = document.createElement("div");
+      all.className = "div-row" + (activeDivision === "" ? " active" : "");
+      all.innerHTML = `<span>All items</span><span class="count">${items.length}</span>`;
+      all.addEventListener("click", () => { activeDivision = ""; renderAll(); });
+      divList.appendChild(all);
+
+      const none = document.createElement("div");
+      const noneCount = items.filter(it => !it.division_id).length;
+      none.className = "div-row" + (activeDivision === "_none" ? " active" : "");
+      none.innerHTML = `<span>(uncategorized)</span><span class="count">${noneCount}</span>`;
+      none.addEventListener("click", () => { activeDivision = "_none"; renderAll(); });
+      divList.appendChild(none);
+
+      divisions.forEach(d => {
+        const row = document.createElement("div");
+        row.className = "div-row" + (activeDivision === d.id ? " active" : "");
+        row.innerHTML = `
+          <span class="div-name">${d.name}</span>
+          <span class="ed-btns">
+            <button data-act="rename">ren</button>
+            <button data-act="del">del</button>
+          </span>
+          <span class="count">${d.item_count || 0}</span>
+        `;
+        row.addEventListener("click", (e) => {
+          if (e.target.tagName === "BUTTON") return;
+          activeDivision = d.id;
+          renderAll();
+        });
+        row.querySelector('[data-act="rename"]').addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const name = prompt("Rename division:", d.name);
+          if (!name || name === d.name) return;
+          await withOverlay("Renaming…", async () => {
+            await fetch(`/api/store/divisions/${encodeURIComponent(d.id)}`, {
+              method: "PUT",
+              headers: {"content-type": "application/json"},
+              body: JSON.stringify({ name: name.trim() }),
+            });
+            await loadAll();
+          });
+        });
+        row.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const count = d.item_count || 0;
+          if (count > 0) {
+            alert(`Cannot delete "${d.name}": it still has ${count} item(s).\n\nEmpty the division first — move those items to another division or delete them.`);
+            return;
+          }
+          if (!confirm(`Delete empty division "${d.name}"?`)) return;
+          await withOverlay("Deleting…", async () => {
+            const res = await fetch(`/api/store/divisions/${encodeURIComponent(d.id)}`, { method: "DELETE" });
+            if (!res.ok) {
+              let msg = "";
+              try { msg = (await res.text()).trim(); } catch (_) {}
+              alert(msg || `Could not delete division (HTTP ${res.status}).`);
+              await loadAll();
+              return;
+            }
+            if (activeDivision === d.id) activeDivision = "";
+            await loadAll();
+          });
+        });
+        divList.appendChild(row);
+      });
+    }
+
+    function renderItems() {
+      const q = (searchEl.value || "").toLowerCase().trim();
+      let filtered = items;
+      if (activeDivision === "_none") {
+        filtered = items.filter(it => !it.division_id);
+      } else if (activeDivision) {
+        filtered = items.filter(it => it.division_id === activeDivision);
+      }
+      if (q) {
+        filtered = filtered.filter(it =>
+          [it.name, it.id_number, it.producer, it.description, it.notes]
+            .some(v => String(v || "").toLowerCase().includes(q))
+        );
+      }
+      grid.innerHTML = "";
+      if (!filtered.length) {
+        statusEl.textContent = items.length ? "No matches." : "No items yet. Click + Add Item.";
+        return;
+      }
+      statusEl.textContent = "";
+      filtered.forEach(it => {
+        const a = document.createElement("a");
+        const low = Number(it.min_count) > 0 && Number(it.current_count) < Number(it.min_count);
+        a.className = "item" + (low ? " low" : "");
+        a.href = `/store-item.html?id=${encodeURIComponent(it.id)}`;
+        const img = (it.images && it.images.length)
+          ? `/store-files/items/${encodeURIComponent(it.id)}/images/${encodeURIComponent(it.images[0])}`
+          : "";
+        const cur = it.current_count ?? 0;
+        const mx = it.max_count ?? 0;
+        const mn = it.min_count ?? 0;
+        a.innerHTML = `
+          <div class="thumb" ${img ? `style="background-image:url('${img}'); background-color:#fff;"` : ""}>
+            ${img ? "" : "no image"}
+          </div>
+          <div class="info">
+            <div class="name">${it.name || "(unnamed)"}</div>
+            ${it.producer ? `<div class="producer">${it.producer}</div>` : ""}
+            ${it.wheel_size ? `<div class="producer">${it.wheel_size}${it.wheel_season ? " · " + it.wheel_season : ""}${it.wheel_type ? " · " + it.wheel_type : ""}</div>` : ""}
+            ${it.id_number ? `<div class="num">${it.id_number}</div>` : ""}
+            <div class="stock">
+              <span class="cur ${low ? "low" : ""}">${cur}</span>
+              <span class="range">min ${mn} / max ${mx}</span>
+            </div>
+          </div>
+        `;
+        grid.appendChild(a);
+      });
+    }
+
+    function renderAll() {
+      renderDivisions();
+      renderItems();
+    }
+
+    async function loadAll() {
+      try {
+        const [dRes, iRes] = await Promise.all([
+          fetch("/api/store/divisions"),
+          fetch("/api/store/items"),
+        ]);
+        const d = await dRes.json();
+        const i = await iRes.json();
+        divisions = d.items || [];
+        items = i.items || [];
+        renderAll();
+      } catch (e) {
+        statusEl.textContent = "Error: " + e;
+      }
+    }
+
+    document.getElementById("add-div").addEventListener("click", async () => {
+      const inp = document.getElementById("new-div");
+      const name = inp.value.trim();
+      if (!name) return;
+      showOverlay("Adding…");
+      try {
+        const res = await fetch("/api/store/divisions", {
+          method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        inp.value = "";
+        divStatus.textContent = "";
+        await loadAll();
+      } catch (e) {
+        divStatus.textContent = "Error: " + e.message;
+      } finally {
+        hideOverlay();
+      }
+    });
+    document.getElementById("new-div").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("add-div").click();
+    });
+
+    document.getElementById("add-item").addEventListener("click", () => {
+      const url = activeDivision && activeDivision !== "_none"
+        ? `/store-item.html?division=${encodeURIComponent(activeDivision)}`
+        : `/store-item.html`;
+      window.location.href = url;
+    });
+
+    searchEl.addEventListener("input", () => {
+      const pos = searchEl.selectionStart;
+      searchEl.value = searchEl.value.toUpperCase();
+      try { searchEl.setSelectionRange(pos, pos); } catch (_) {}
+      renderItems();
+    });
+
+    loadAll();
+  </script>
+</body>
+
+</html>

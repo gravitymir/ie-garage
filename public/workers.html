@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workers - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    .btn-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+      color: #3275ac; text-decoration: none; font-weight: 600;
+    }
+    button.primary {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #3275ac; background: #3275ac; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button.primary:hover { opacity: 0.9; }
+    .add-right { margin-left: auto; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .worker {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 12px; text-decoration: none; color: inherit;
+      display: flex; gap: 12px; align-items: center;
+      transition: transform 0.1s, border-color 0.1s;
+    }
+    .worker:hover { border-color: #3275ac; transform: translateY(-1px); }
+    .worker .photo {
+      flex: 0 0 auto; width: 64px; height: 64px;
+      border-radius: 50%; object-fit: cover;
+      border: 1px solid #bbb; background: #fff;
+    }
+    .worker .photo-none {
+      flex: 0 0 auto; width: 64px; height: 64px;
+      border-radius: 50%; border: 1px dashed #bbb; background: #fafafa;
+      display: flex; align-items: center; justify-content: center;
+      color: #999; font-size: 10px; text-align: center;
+    }
+    .worker .info { min-width: 0; }
+    .worker .name { font-weight: 600; font-size: 0.95rem; }
+    .worker .name2 { font-weight: 600; font-size: 0.9rem; }
+    .worker .phone { font-size: 0.85rem; color: #555; margin-top: 4px; }
+    .muted { color: #666; font-size: 13px; margin: 12px 0; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="btn-link" href="/index.html">&larr; Home</a>
+    <h1>Workers</h1>
+    <button class="primary add-right" id="add-worker">+ Add worker</button>
+  </div>
+
+  <div class="muted" id="status">Loading…</div>
+  <div class="grid" id="grid"></div>
+
+  <script>
+    const grid = document.getElementById("grid");
+    const statusEl = document.getElementById("status");
+
+    function esc(s) {
+      return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    document.getElementById("add-worker").addEventListener("click", () => {
+      window.location.href = "/worker.html";
+    });
+
+    async function load() {
+      try {
+        const res = await fetch("/api/workers");
+        const data = await res.json();
+        const items = data.items || [];
+        grid.innerHTML = "";
+        if (!items.length) {
+          statusEl.textContent = "No workers yet. Click + Add worker.";
+          return;
+        }
+        statusEl.textContent = "";
+        items.forEach(w => {
+          const a = document.createElement("a");
+          a.className = "worker";
+          a.href = `/worker.html?id=${encodeURIComponent(w.id)}`;
+          const fn = esc(w.first_name || ""), ln = esc(w.last_name || "");
+          const nameHtml = (fn || ln)
+            ? `<div class="name">${fn || ln}</div>` + (fn && ln ? `<div class="name2">${ln}</div>` : "")
+            : `<div class="name">(no name)</div>`;
+          const ver = w.photo_updated_ms || 0;
+          const photo = w.photo
+            ? `<img class="photo" src="/api/workers/${encodeURIComponent(w.id)}/photo/thumb?v=${ver}" alt="" loading="lazy">`
+            : `<div class="photo-none">no photo</div>`;
+          a.innerHTML = `
+            ${photo}
+            <div class="info">
+              ${nameHtml}
+              ${w.phone ? `<div class="phone">${esc(w.phone)}</div>` : ""}
+            </div>
+          `;
+          grid.appendChild(a);
+        });
+      } catch (e) {
+        statusEl.textContent = "Error: " + e.message;
+      }
+    }
+    load();
+  </script>
+</body>
+
+</html>

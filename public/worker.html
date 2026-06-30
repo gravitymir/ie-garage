@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Worker - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px; color: #111; background: #f5f5f5;
+    }
+    .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    .btn-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+      color: #3275ac; text-decoration: none; font-weight: 600;
+    }
+    .layout { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px; }
+    @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+    .card { background: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+    .card h2 { margin: 0 0 10px; font-size: 1rem; color: #555; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+    .field label { font-size: 12px; color: #555; }
+    input[type="text"], input[type="tel"], input[type="number"], input[type="date"], input[type="password"], textarea {
+      font-family: inherit; padding: 6px 8px; border: 1px solid #bbb;
+      border-radius: 4px; font-size: 14px; width: 100%;
+    }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .dob { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .addr-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+    button {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #3275ac; background: #3275ac; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button.secondary { background: #fff; color: #3275ac; }
+    button.danger { background: #c33; border-color: #c33; }
+    button:hover { opacity: 0.9; }
+    .row-btns { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+    .status { font-size: 13px; color: #555; margin: 6px 0; min-height: 18px; }
+    .status.err { color: #c33; }
+    .status.ok { color: #393; }
+
+    .photo-wrap {
+      background: #fafafa; border: 1px dashed #ccc; border-radius: 6px;
+      min-height: 160px; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; margin-bottom: 10px;
+    }
+    .photo-wrap img { max-width: 100%; max-height: 260px; border-radius: 4px; display: block; }
+    .photo-wrap .empty { color: #888; font-size: 13px; padding: 20px; }
+
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 38px; }
+    .pw-peek {
+      position: absolute;
+      top: 50%;
+      right: 4px;
+      transform: translateY(-50%);
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .pw-peek:hover { color: #3275ac; background: #f0f6fb; }
+    .pw-peek:active { color: #3275ac; background: #e0eef7; }
+
+    .list-row { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
+    .list-row input { flex: 1; }
+    .list-row button { padding: 4px 8px; font-size: 12px; background: #fff; color: #c33; border-color: #c33; }
+    .add-row button { font-size: 13px; padding: 6px 12px; background: #fff; color: #3275ac; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="btn-link" href="/index.html">&larr; Home</a>
+    <a class="btn-link" href="/workers.html">&larr; All Workers</a>
+    <h1 id="title">Add Worker</h1>
+  </div>
+
+  <div class="layout">
+    <!-- Left: photo -->
+    <div>
+      <div class="card">
+        <h2>Photo</h2>
+        <div class="photo-wrap">
+          <div class="empty" id="no-photo">No photo yet.</div>
+          <img id="photo" alt="Worker photo" style="display:none;" />
+        </div>
+        <div class="row-btns">
+          <input type="file" id="photo-input" accept="image/*" style="display:none;" />
+          <button class="secondary" id="upload-photo">Upload / Change</button>
+          <button class="danger" id="delete-photo" style="display:none;">Delete</button>
+        </div>
+        <div class="status" id="photo-status"></div>
+        <div class="status" id="photo-hint">Save the worker first to attach a photo.</div>
+      </div>
+    </div>
+
+    <!-- Right: details -->
+    <div>
+      <div class="card">
+        <h2>Personal</h2>
+        <div class="row2">
+          <div class="field"><label>First name</label><input type="text" id="first_name" /></div>
+          <div class="field"><label>Last name</label><input type="text" id="last_name" /></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Date of birth</label><input type="date" id="birth_date" autocomplete="bday" /></div>
+          <div class="field"><label>Phone</label><input type="tel" id="phone" /></div>
+        </div>
+        <div class="addr-row">
+          <div class="field"><label>Address</label><textarea id="address"></textarea></div>
+          <div class="field"><label>Postcode / Eircode</label><input type="text" id="postcode" /></div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>Password <span id="pw-hint" style="color:#888;font-weight:normal;font-size:11px;"></span></label>
+            <div class="pw-wrap">
+              <input type="password" id="password" autocomplete="new-password" />
+              <button type="button" id="pw-peek" class="pw-peek" aria-label="Hold to show password" title="Hold to show">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Skills</h2>
+        <div id="skills-body"></div>
+        <div class="add-row"><button data-add="skills">+ Add skill</button></div>
+      </div>
+
+      <div class="card">
+        <h2>Documents</h2>
+        <div id="docs-body"></div>
+        <div class="add-row"><button data-add="docs">+ Add document</button></div>
+      </div>
+
+      <div class="row-btns">
+        <button id="save-btn">Save</button>
+        <button class="danger" id="delete-btn" style="display:none;">Delete worker</button>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    let workerId = params.get("id") || "";
+    let worker = {};
+
+    const titleEl = document.getElementById("title");
+    const statusEl = document.getElementById("status");
+    const deleteBtn = document.getElementById("delete-btn");
+    const photoStatus = document.getElementById("photo-status");
+    const photoHint = document.getElementById("photo-hint");
+
+    function setStatus(el, msg, kind) {
+      el.textContent = msg || "";
+      el.className = "status" + (kind ? " " + kind : "");
+    }
+    function toStr(v) { return v == null ? "" : String(v); }
+    // Value for <input type="date"> (YYYY-MM-DD); falls back to old year/month/day fields.
+    function birthDateValue(w) {
+      if (w.birth_date) return String(w.birth_date);
+      const y = w.birth_year, m = w.birth_month, d = w.birth_day;
+      if (y && m && d) {
+        return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      }
+      return "";
+    }
+
+    // ---- list rows (skills / documents) ----
+    function addListRow(kind, value) {
+      const body = document.getElementById(kind === "skills" ? "skills-body" : "docs-body");
+      const row = document.createElement("div");
+      row.className = "list-row";
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.className = kind;
+      if (value != null) inp.value = value;
+      const rm = document.createElement("button");
+      rm.type = "button"; rm.textContent = "✕";
+      rm.addEventListener("click", () => row.remove());
+      row.appendChild(inp);
+      row.appendChild(rm);
+      body.appendChild(row);
+    }
+    document.querySelectorAll("[data-add]").forEach(b =>
+      b.addEventListener("click", () => addListRow(b.dataset.add, "")));
+
+    function collectList(kind) {
+      return [...document.querySelectorAll("." + kind)]
+        .map(i => i.value.trim()).filter(Boolean);
+    }
+
+    function applyMode() {
+      const hasId = !!workerId;
+      titleEl.textContent = hasId ? "Edit Worker" : "Add Worker";
+      deleteBtn.style.display = hasId ? "" : "none";
+      photoHint.style.display = hasId ? "none" : "";
+      document.getElementById("upload-photo").style.display = hasId ? "" : "none";
+    }
+
+    function refreshPhoto(photo, updatedMs) {
+      const img = document.getElementById("photo");
+      const none = document.getElementById("no-photo");
+      const del = document.getElementById("delete-photo");
+      if (photo) {
+        const v = updatedMs || Date.now();
+        img.src = `/api/workers/${encodeURIComponent(workerId)}/photo?v=${v}`;
+        img.style.display = "block";
+        none.style.display = "none";
+        del.style.display = "";
+      } else {
+        img.removeAttribute("src");
+        img.style.display = "none";
+        none.style.display = "";
+        del.style.display = "none";
+      }
+    }
+
+    async function load() {
+      applyMode();
+      if (!workerId) return;
+      try {
+        const res = await fetch(`/api/workers/${encodeURIComponent(workerId)}`);
+        if (!res.ok) throw new Error(await res.text());
+        worker = await res.json();
+        document.getElementById("first_name").value = toStr(worker.first_name);
+        document.getElementById("last_name").value = toStr(worker.last_name);
+        document.getElementById("birth_date").value = birthDateValue(worker);
+        document.getElementById("phone").value = toStr(worker.phone);
+        document.getElementById("address").value = toStr(worker.address);
+        document.getElementById("postcode").value = toStr(worker.postcode);
+        document.getElementById("password").value = "";
+        document.getElementById("pw-hint").textContent = worker.has_password
+          ? "(set — leave empty to keep, or type a new one to change)"
+          : "(not set yet)";
+        (Array.isArray(worker.skills) ? worker.skills : []).forEach(s => addListRow("skills", s));
+        (Array.isArray(worker.documents) ? worker.documents : []).forEach(d => addListRow("docs", d));
+        refreshPhoto(worker.photo, worker.photo_updated_ms);
+      } catch (e) {
+        setStatus(statusEl, "Error: " + e.message, "err");
+      }
+    }
+
+    // Press-and-hold to peek the password (mouse + touch).
+    (function () {
+      const btn = document.getElementById("pw-peek");
+      const input = document.getElementById("password");
+      if (!btn || !input) return;
+      const show = (e) => { e.preventDefault(); input.type = "text"; };
+      const hide = () => { input.type = "password"; };
+      btn.addEventListener("mousedown", show);
+      btn.addEventListener("mouseup", hide);
+      btn.addEventListener("mouseleave", hide);
+      btn.addEventListener("blur", hide);
+      btn.addEventListener("touchstart", show, { passive: false });
+      btn.addEventListener("touchend", hide);
+      btn.addEventListener("touchcancel", hide);
+      // Stop the click from doing anything (button has type="button", but just in case).
+      btn.addEventListener("click", (e) => e.preventDefault());
+    })();
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const body = Object.assign({}, worker, {
+        first_name: document.getElementById("first_name").value.trim(),
+        last_name: document.getElementById("last_name").value.trim(),
+        birth_date: document.getElementById("birth_date").value,
+        phone: document.getElementById("phone").value.trim(),
+        address: document.getElementById("address").value.trim(),
+        postcode: document.getElementById("postcode").value.trim(),
+        skills: collectList("skills"),
+        documents: collectList("docs"),
+        // Empty string = keep existing password on the server; non-empty = update.
+        password: document.getElementById("password").value,
+      });
+      // The has_password marker is UI-only; don't echo it back.
+      delete body.has_password;
+      setStatus(statusEl, "Saving…");
+      showOverlay("Saving…");
+      try {
+        let res;
+        if (workerId) {
+          res = await fetch(`/api/workers/${encodeURIComponent(workerId)}`, {
+            method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+          });
+        } else {
+          res = await fetch("/api/workers", {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+          });
+        }
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        worker = body;
+        if (!workerId && data.id) {
+          workerId = data.id;
+          worker.id = workerId;
+          const u = new URL(location); u.searchParams.set("id", workerId);
+          history.replaceState({}, "", u);
+          applyMode();
+        }
+        setStatus(statusEl, "Saved.", "ok");
+        setTimeout(() => setStatus(statusEl, ""), 1500);
+      } catch (e) {
+        setStatus(statusEl, "Error: " + e.message, "err");
+      } finally { hideOverlay(); }
+    });
+
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm("Delete this worker?")) return;
+      await fetch(`/api/workers/${encodeURIComponent(workerId)}`, { method: "DELETE" });
+      location.href = "/workers.html";
+    });
+
+    // ---- photo ----
+    const photoInput = document.getElementById("photo-input");
+    document.getElementById("upload-photo").addEventListener("click", () => {
+      if (!workerId) { setStatus(photoStatus, "Save the worker first.", "err"); return; }
+      photoInput.click();
+    });
+    photoInput.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file || !file.type.startsWith("image/")) { photoInput.value = ""; return; }
+      const reader = new FileReader();
+      reader.onload = async () => {
+        showOverlay("Uploading photo…");
+        try {
+          const res = await fetch(`/api/workers/${encodeURIComponent(workerId)}/photo`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ filename: file.name, data_base64: reader.result }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const j = await res.json();
+          worker.photo = j.filename; worker.photo_updated_ms = j.photo_updated_ms;
+          refreshPhoto(j.filename, j.photo_updated_ms);
+          setStatus(photoStatus, "Photo saved.", "ok");
+          setTimeout(() => setStatus(photoStatus, ""), 1500);
+        } catch (err) {
+          setStatus(photoStatus, "Error: " + err.message, "err");
+        } finally { hideOverlay(); photoInput.value = ""; }
+      };
+      reader.readAsDataURL(file);
+    });
+    document.getElementById("delete-photo").addEventListener("click", async () => {
+      if (!confirm("Delete photo?")) return;
+      showOverlay("Deleting…");
+      try {
+        await fetch(`/api/workers/${encodeURIComponent(workerId)}/photo`, { method: "DELETE" });
+        delete worker.photo; delete worker.photo_updated_ms;
+        refreshPhoto(null);
+      } finally { hideOverlay(); }
+    });
+
+    load();
+  </script>
+</body>
+
+</html>

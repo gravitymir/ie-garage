@@ -15,8 +15,10 @@
 
     .clock {
       display: flex;
-      height: 3rem;
+      flex-wrap: wrap;
+      gap: 0 0.4em;
       font-size: 4rem;
+      line-height: 1.05;
       font-weight: 900;
       background-repeat: no-repeat;
       background-position: top -6rem center;
@@ -25,30 +27,25 @@
       justify-content: center;
       align-items: center;
     }
+    .clock .clock-date,
+    .clock .clock-time {
+      white-space: nowrap;
+    }
 
     @media (min-width: 1200px) {
-      .clock {
-        height: 6rem;
-        font-size: 8rem;
-      }
+      .clock { font-size: 8rem; }
     }
     @media (max-width: 999px) {
-      .clock {
-        height: 3rem;
-        font-size: 4rem;
-      }
+      .clock { font-size: 4rem; }
     }
     @media (max-width: 799px) {
-      .clock {
-        height: 2.5rem;
-        font-size: 3rem;
-      }
+      .clock { font-size: 3rem; }
+    }
+    @media (max-width: 600px) {
+      .clock { flex-direction: column; gap: 0; }
     }
     @media (max-width: 480px) {
-      .clock {
-        height: 2rem;
-        font-size: 2rem;
-      }
+      .clock { font-size: 2rem; }
     }
 
     .toolbar {
@@ -122,13 +119,12 @@
       font-size: 12px;
     }
   </style>
+  <script src="/chat.js"></script>
 </head>
 
 <body>
   <a href="/job.html" class="clock-link">
-    <div class="clock">
-      <span id="clock"></span>
-    </div>
+    <div class="clock" id="clock"></div>
   </a>
   <div class="toolbar"></div>
   <div class="muted" id="status"></div>
@@ -175,7 +171,11 @@
 
     function updateClock() {
       if (!clockEl) return;
-      clockEl.textContent = formatDate(Date.now());
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const date = `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`;
+      const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      clockEl.innerHTML = `<span class="clock-date">${date}</span><span class="clock-time">${time}</span>`;
     }
 
     async function loadList() {

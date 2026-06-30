@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Car - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0;
+      padding: 20px;
+      color: #111;
+      background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    .plate {
+      color: #3275ac; font-weight: 900; letter-spacing: 0.04em;
+    }
+    .fuel-badge {
+      display: none;
+      padding: 6px 14px;
+      font-size: 1.1rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      border-radius: 6px;
+      border: 1px solid;
+    }
+    .fuel-badge.visible { display: inline-block; }
+    a.home, a.subpage {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+    }
+    button {
+      font-family: inherit; padding: 8px 14px;
+      border: 1px solid #3275ac; background: #3275ac; color: #fff;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+    }
+    button.secondary { background: #fff; color: #3275ac; }
+    button.danger { background: #c33; border-color: #c33; }
+    button:hover { opacity: 0.9; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 360px) 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 14px;
+    }
+    .card h2 { margin: 0 0 10px; font-size: 1rem; color: #555; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+    .field label { font-size: 12px; color: #555; }
+    input[type="text"], input[type="tel"], textarea, select {
+      font-family: inherit; padding: 6px 8px; border: 1px solid #bbb;
+      border-radius: 4px; font-size: 14px; width: 100%;
+    }
+    select { height: 32px; background-color: #fff; }
+    textarea { min-height: 60px; resize: vertical; }
+    input[readonly] { background: #f0f0f0; color: #555; cursor: default; }
+    button.btn-disabled { opacity: 0.45; cursor: not-allowed; }
+    button.btn-disabled:hover { opacity: 0.45; }
+    .row-btns { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+
+    .list { display: flex; flex-direction: column; gap: 6px; }
+    .item {
+      background: #fafafa; border: 1px solid #ddd; border-radius: 6px;
+      padding: 8px 10px; display: flex; justify-content: space-between;
+      align-items: center; gap: 8px; font-size: 13px;
+    }
+    .item .name {
+      flex: 1; min-width: 0; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .item a { color: #3275ac; text-decoration: none; }
+    .item a:hover { text-decoration: underline; }
+    .item button { padding: 4px 8px; font-size: 12px; }
+
+    .muted { color: #666; font-size: 12px; }
+    .status { font-size: 13px; color: #555; margin: 6px 0; }
+    .status.err { color: #c33; }
+    .status.ok { color: #393; }
+
+    .photo-wrap {
+      margin-bottom: 10px;
+      background: #fafafa;
+      border: 1px dashed #ccc;
+      border-radius: 6px;
+      min-height: 140px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .photo-wrap img {
+      max-width: 100%;
+      max-height: 260px;
+      display: block;
+      border-radius: 4px;
+      cursor: zoom-in;
+    }
+    .photo-wrap .empty {
+      color: #888;
+      font-size: 13px;
+      padding: 20px;
+      cursor: pointer;
+      text-align: center;
+      width: 100%;
+      transition: color 0.15s, background 0.15s;
+    }
+    .photo-wrap .empty:hover { color: #3275ac; background: #f0f6fb; }
+
+    /* Full-screen photo lightbox */
+    .lightbox {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 9000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      cursor: zoom-out;
+    }
+    .lightbox.open { display: flex; }
+    .lightbox-actions {
+      position: absolute; bottom: 24px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 10px; z-index: 1;
+      flex-wrap: wrap; justify-content: center;
+    }
+    .lightbox img {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 4px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+    .lightbox img { cursor: zoom-out; }
+
+    .oil-item { flex-direction: column; align-items: stretch; }
+    .oil-item .head { display: flex; justify-content: space-between; align-items: center; }
+    .oil-item .body { font-size: 12px; color: #444; margin-top: 6px; display: none; }
+    .oil-item.open .body { display: block; }
+    .oil-item pre { background: #fff; border: 1px solid #eee; padding: 6px; max-height: 240px; overflow: auto; font-size: 11px; }
+  </style>
+  <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/fuel-detect.js"></script>  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <a href="/index.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; Home</a>
+      <a href="/cars.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; All Cars</a>
+      <h1>Car: <span class="plate" id="title-plate"></span></h1>
+      <span id="fuel-badge" class="fuel-badge"></span>
+    </div>
+  </div>
+
+  <div class="layout">
+
+    <!-- Left: car info + photo -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+
+    <div class="card">
+      <h2>Photo</h2>
+      <div class="photo-wrap" id="photo-wrap">
+        <div class="empty" id="no-photo" title="Click to upload a photo">No photo yet — click to upload.</div>
+        <img id="car-photo" alt="Car photo" style="display:none;" />
+      </div>
+      <div class="row-btns">
+        <input type="file" id="photo-input" accept="image/*" style="display:none;" />
+        <span class="muted" id="photo-hint" style="display:none;">Tap the photo to change or delete it.</span>
+      </div>
+      <div class="status" id="photo-status"></div>
+    </div>
+
+    <!-- Full-screen photo viewer -->
+    <div class="lightbox" id="lightbox">
+      <img id="lightbox-img" alt="Car photo" />
+      <div class="lightbox-actions">
+        <button class="secondary" id="lb-change">Upload / Change</button>
+        <button class="danger" id="lb-delete">Delete photo</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Vehicle Info</h2>
+      <div class="field">
+        <label>Reg No</label>
+        <input type="text" id="reg_no" readonly />
+      </div>
+      <div class="field">
+        <label>Make</label>
+        <input type="text" id="make" readonly />
+      </div>
+      <div class="field">
+        <label>Model</label>
+        <input type="text" id="model" readonly />
+      </div>
+      <div class="field">
+        <label>Years</label>
+        <input type="text" id="years" readonly />
+      </div>
+      <div class="field">
+        <label>Engine (oil)</label>
+        <input type="text" id="engine" readonly />
+      </div>
+      <div class="field">
+        <label>Fuel type</label>
+        <select id="fuel_type">
+          <option value="unknown">Unknown</option>
+          <option value="petrol">Petrol</option>
+          <option value="diesel">Diesel</option>
+          <option value="petrol-electric">Petrol/Electric</option>
+          <option value="diesel-electric">Diesel/Electric</option>
+          <option value="electric">Electric</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>VIN</label>
+        <input type="text" id="vin" maxlength="17" placeholder="17 chars (no I, O, Q)" />
+      </div>
+      <div class="field">
+        <label>PIN</label>
+        <input type="text" id="pin" maxlength="7" inputmode="numeric" placeholder="4–7 digit code" />
+      </div>
+      <div class="field">
+        <label>Customer name</label>
+        <input type="text" id="customer_name" />
+      </div>
+      <div class="field">
+        <label>Customer phone</label>
+        <input type="tel" id="customer_phone" />
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="notes"></textarea>
+      </div>
+      <div class="row-btns">
+        <button id="save-car" style="display:none;">Save</button>
+        <button class="danger" id="delete-car">Delete car</button>
+      </div>
+      <div class="status" id="car-status"></div>
+    </div>
+
+    </div>
+
+    <!-- Right: jobs + oil -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div class="card">
+        <h2>Jobs <span class="muted" id="jobs-count"></span></h2>
+        <div class="row-btns" style="margin-bottom:10px;">
+          <button id="new-job">+ New Job</button>
+        </div>
+        <div class="list" id="jobs-list"></div>
+      </div>
+
+      <div class="card">
+        <h2>Oil archive <span class="muted" id="oil-count"></span></h2>
+        <div class="muted" style="margin-bottom:6px;">Fluids by component — tap to expand</div>
+        <div class="list" id="fluids-list"></div>
+        <div class="muted" style="margin:12px 0 4px;">Raw records</div>
+        <div class="status" id="oil-status"></div>
+        <div class="list" id="oil-list"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const plate = (params.get("plate") || "").toUpperCase();
+    document.getElementById("title-plate").textContent = plate || "(unknown)";
+
+    const carStatus = document.getElementById("car-status");
+    const oilStatus = document.getElementById("oil-status");
+
+    // Build a useful error from a failed fetch Response, even when the body is empty.
+    async function errFromRes(res) {
+      let body = "";
+      try { body = (await res.text()).trim(); } catch (_) {}
+      if (body) return body;
+      return `HTTP ${res.status} ${res.statusText || ""}`.trim();
+    }
+
+    function toStr(v) {
+      if (v == null) return "";
+      if (typeof v === "string") return v;
+      if (typeof v === "number" || typeof v === "boolean") return String(v);
+      if (typeof v === "object") {
+        // mpmoil returns objects like { id, name, slug, ... } — pull the human-readable field
+        return v.name || v.title || v.label || v.brand || v.model || v.text || "";
+      }
+      return String(v);
+    }
+
+    // Production years "2008 - 2012" from the saved mpmoil variant.
+    function yearsFromVariant(v) {
+      v = v || {};
+      const fromRaw = v.year_from ?? v.from_year ?? v.year_start ?? null;
+      const toRaw = v.year_until ?? v.year_to ?? v.year_end ?? null;
+      const from = (fromRaw && Number(fromRaw)) ? fromRaw : null;
+      const to = (toRaw && Number(toRaw)) ? toRaw : null;
+      if (from && to && String(from) !== String(to)) return `${from} - ${to}`;
+      if (from) return String(from);
+      if (to) return String(to);
+      return "";
+    }
+
+    // Pull engine name/code and oil litres out of an mpmoil advice HTML blob.
+    function extractEngineName(html) {
+      if (!html) return null;
+      const m = html.match(/<h3>\s*([^<]*?engine[^<]*?)\s*<\/h3>/i);
+      if (m) return m[1].trim();
+      const m2 = html.match(/<h3>\s*([^<]*?)\s*<\/h3>/i);
+      return m2 ? m2[1].trim() : null;
+    }
+    function extractEngineOilLitres(html) {
+      if (!html) return null;
+      const m = html.match(/<h3>[^<]*engine[^<]*<\/h3>[\s\S]*?class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
+      if (m) return m[1].replace(",", ".");
+      const m2 = html.match(/class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
+      return m2 ? m2[1].replace(",", ".") : null;
+    }
+
+    function esc(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // "motor-oil-5w-30-premium-synthetic-dpf" -> "Motor Oil 5W-30 Premium Synthetic DPF"
+    function humanizeSlug(slug) {
+      return slug.split("-").map(w =>
+        /\d/.test(w) ? w.toUpperCase() : (w.charAt(0).toUpperCase() + w.slice(1))
+      ).join(" ");
+    }
+
+    // Parse step-b advice DOM into per-component fluid recommendations.
+    function parseFluids(doc) {
+      if (!doc) return [];
+      return [...doc.querySelectorAll(".advice-part")].map(part => {
+        const name = (part.querySelector("h3")?.textContent || "").replace(/\s+/g, " ").trim();
+        const amount = (part.querySelector(".advice-amount .amount")?.textContent || "").replace(/\s+/g, " ").trim();
+        const usage = (part.querySelector(".advice-usage")?.textContent || "").replace(/\s+/g, " ").replace(/^Usage:\s*/i, "").trim();
+        const seen = new Set();
+        const products = [];
+        part.querySelectorAll('a[href^="/products/"]').forEach(a => {
+          const m = (a.getAttribute("href") || "").match(/^\/products\/([^\/]+)\/([^\/?#]+)/);
+          if (!m) return;
+          const code = m[1], slug = m[2];
+          if (code.toLowerCase() === "recommendation") return; // skip share link
+          const key = code + "|" + slug;
+          if (seen.has(key)) return;
+          seen.add(key);
+          products.push({ code, name: humanizeSlug(slug) });
+        });
+        return { name, amount, usage, products };
+      }).filter(c => c.name);
+    }
+
+    function renderFluids(components) {
+      const list = document.getElementById("fluids-list");
+      if (!list) return;
+      list.innerHTML = "";
+      if (!components.length) {
+        list.innerHTML = `<div class="muted">No recommendation data.</div>`;
+        return;
+      }
+      components.forEach(c => {
+        const div = document.createElement("div");
+        div.className = "item oil-item";
+        const summary = c.amount
+          ? `${esc(c.name)} <span class="muted">· ${esc(c.amount)}</span>`
+          : esc(c.name);
+        let body = "";
+        if (c.amount) body += `<div><strong>Amount:</strong> ${esc(c.amount)}</div>`;
+        if (c.usage) body += `<div><strong>Usage:</strong> ${esc(c.usage)}</div>`;
+        if (c.products.length) {
+          body += `<div style="margin-top:4px;"><strong>Recommended:</strong>`
+            + `<ul style="margin:4px 0 0; padding-left:18px;">`
+            + c.products.map(p => `<li>${esc(p.name)} <span class="muted">(${esc(p.code)})</span></li>`).join("")
+            + `</ul></div>`;
+        }
+        div.innerHTML = `
+          <div class="head" style="cursor:pointer;">
+            <div class="name">${summary}</div>
+          </div>
+          <div class="body">${body || '<span class="muted">No details.</span>'}</div>
+        `;
+        div.querySelector(".head").addEventListener("click", () => div.classList.toggle("open"));
+        list.appendChild(div);
+      });
+    }
+
+    // Read the chosen variant's oil record once: fill the Engine field + the fluids list.
+    async function loadVariantOilDetails() {
+      const engEl = document.getElementById("engine");
+      try {
+        const res = await fetch(`/api/cars/${encodeURIComponent(plate)}/oil`);
+        const data = await res.json();
+        const items = (data.items || []).filter(o =>
+          !/^_?step-?a/i.test(o.name || "") && !/^step a/i.test(o.title || ""));
+        if (!items.length) { renderFluids([]); return; }
+        const r = await fetch(`/api/cars/${encodeURIComponent(plate)}/oil/${encodeURIComponent(items[0].name)}`);
+        const rec = await r.json();
+        const html = (rec && rec.data && (rec.data.html || (rec.data.data && rec.data.data.html))) || rec.html || "";
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        // Engine field: engine code · power (HP/KW/RPM) · oil litres
+        const eng = extractEngineName(html);
+        const lit = extractEngineOilLitres(html);
+        let power = "";
+        doc.querySelectorAll(".model").forEach(el => {
+          const t = el.textContent.replace(/\s+/g, " ").trim();
+          if (!power && /\d\s*HP/i.test(t)) power = t; // e.g. "136HP, 100KW, 4200RPM"
+        });
+        const engName = eng ? (eng.replace(/^engine\s+/i, "") || eng) : "";
+        engEl.value = [engName, power, (lit ? `${lit} L` : "")].filter(Boolean).join(" · ");
+        renderFluids(parseFluids(doc));
+      } catch (_) { renderFluids([]); }
+    }
+
+    // --- Vehicle Info: show Save only when an editable field changed ---
+    const EDITABLE = ["customer_name", "customer_phone", "notes", "vin", "pin", "fuel_type"];
+    let baseline = {};
+    let carData = {}; // full car.json, so Save preserves mpmoil/photo fields
+    function checkDirty() {
+      const dirty = EDITABLE.some(id => document.getElementById(id).value !== baseline[id]);
+      document.getElementById("save-car").style.display = dirty ? "" : "none";
+    }
+    function snapshotBaseline() {
+      baseline = {};
+      EDITABLE.forEach(id => { baseline[id] = document.getElementById(id).value; });
+      checkDirty();
+    }
+    EDITABLE.forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener("input", checkDirty);
+      el.addEventListener("change", checkDirty);
+    });
+
+    // Update the big fuel-type badge in the header (PETROL / DIESEL / HYBRID / …).
+    function refreshFuelBadge(fuel) {
+      const badge = document.getElementById("fuel-badge");
+      if (!badge) return;
+      const meta = (typeof window.fuelTypeMeta === "function")
+        ? window.fuelTypeMeta(fuel)
+        : { label: String(fuel || "UNKNOWN").toUpperCase(), color: "#666", bg: "#ececec" };
+      badge.textContent = meta.label;
+      badge.style.color = meta.color;
+      badge.style.backgroundColor = meta.bg;
+      badge.style.borderColor = meta.color;
+      badge.classList.add("visible");
+    }
+    // Live update of the badge as the user changes the select.
+    document.getElementById("fuel_type").addEventListener("change", (e) => {
+      refreshFuelBadge(e.target.value);
+    });
+
+    // --- Delete car is blocked while the car still has jobs ---
+    function updateDeleteState(jobCount) {
+      const btn = document.getElementById("delete-car");
+      if (jobCount > 0) {
+        btn.classList.add("btn-disabled");
+        btn.title = "Delete all jobs for this car first — then you can delete the car.";
+        btn.dataset.blocked = "1";
+      } else {
+        btn.classList.remove("btn-disabled");
+        btn.removeAttribute("title");
+        btn.dataset.blocked = "";
+      }
+    }
+
+    async function loadCar() {
+      try {
+        const res = await fetch(`/api/cars/${encodeURIComponent(plate)}`);
+        if (!res.ok) {
+          if (res.status === 404) { carStatus.textContent = "Car not found."; return; }
+          throw new Error(await res.text());
+        }
+        const data = await res.json();
+        carData = data;
+        document.getElementById("reg_no").value = toStr(data.reg_no) || plate;
+        document.getElementById("make").value = toStr(data.make);
+        document.getElementById("model").value =
+          toStr(data.mpmoil_variant && data.mpmoil_variant.name) || toStr(data.model);
+        document.getElementById("customer_name").value = toStr(data.customer_name);
+        document.getElementById("customer_phone").value = toStr(data.customer_phone);
+        document.getElementById("notes").value = toStr(data.notes);
+        document.getElementById("vin").value = toStr(data.vin);
+        document.getElementById("pin").value = toStr(data.pin) || toStr(data.pin_code);
+        document.getElementById("years").value = toStr(data.mpmoil_years) || yearsFromVariant(data.mpmoil_variant);
+        // Fuel type select + big header badge. Legacy "hybrid" is mapped to
+        // "petrol-electric" so the select shows the correct option even if
+        // the backend migration hasn't touched this file yet.
+        let fuelVal = toStr(data.fuel_type) || "unknown";
+        if (fuelVal === "hybrid") fuelVal = "petrol-electric";
+        document.getElementById("fuel_type").value = fuelVal;
+        refreshFuelBadge(fuelVal);
+        snapshotBaseline();
+        loadVariantOilDetails();
+        refreshPhoto(toStr(data.photo), data.photo_updated_ms);
+      } catch (e) {
+        carStatus.textContent = "Error: " + e.message;
+        carStatus.className = "status err";
+      }
+    }
+
+    function refreshPhoto(photo, updatedMs) {
+      const img = document.getElementById("car-photo");
+      const none = document.getElementById("no-photo");
+      const hint = document.getElementById("photo-hint");
+      if (photo) {
+        const v = updatedMs || Date.now();
+        img.onerror = () => {
+          img.style.display = "none";
+          none.textContent = "Photo could not be loaded — click to upload.";
+          none.style.display = "";
+        };
+        img.onload = () => { none.textContent = "No photo yet — click to upload."; };
+        img.src = `/api/cars/${encodeURIComponent(plate)}/photo?v=${v}`;
+        img.style.display = "block";
+        none.style.display = "none";
+        // Photo present: manage uploads/deletes from the full-screen view.
+        hint.style.display = "";
+      } else {
+        img.removeAttribute("src");
+        img.style.display = "none";
+        none.style.display = "";
+        hint.style.display = "none";
+      }
+    }
+
+    async function loadJobs() {
+      const list = document.getElementById("jobs-list");
+      const cnt = document.getElementById("jobs-count");
+      list.innerHTML = "";
+      try {
+        const res = await fetch(`/api/cars/${encodeURIComponent(plate)}/jobs`);
+        const data = await res.json();
+        const items = data.items || [];
+        cnt.textContent = `(${items.length})`;
+        updateDeleteState(items.length);
+        if (!items.length) {
+          list.innerHTML = `<div class="muted">No jobs yet.</div>`;
+          return;
+        }
+        items.forEach(j => {
+          const div = document.createElement("div");
+          div.className = "item";
+          const date = j.date_in || new Date(j.saved_ms).toLocaleString();
+          const timeRange = (j.time_in || j.time_out)
+            ? ` &middot; ${j.time_in || "?"}–${j.time_out || "?"}` : "";
+          div.innerHTML = `
+            <div class="name">
+              <a href="/job.html?plate=${encodeURIComponent(plate)}&file=${encodeURIComponent(j.name)}">
+                ${date}${timeRange}
+              </a>
+              ${j.work_summary ? `<div class="muted" style="white-space:normal;">${j.work_summary}</div>` : ""}
+            </div>
+            <button class="danger" data-name="${j.name}">Del</button>
+          `;
+          div.querySelector("button").addEventListener("click", async (ev) => {
+            ev.stopPropagation();
+            if (!confirm("Delete this job?")) return;
+            await fetch(`/api/cars/${encodeURIComponent(plate)}/jobs/${encodeURIComponent(j.name)}`, { method: "DELETE" });
+            loadJobs();
+          });
+          list.appendChild(div);
+        });
+      } catch (e) {
+        list.innerHTML = `<div class="status err">Error: ${e.message}</div>`;
+      }
+    }
+
+    async function loadOils() {
+      const list = document.getElementById("oil-list");
+      const cnt = document.getElementById("oil-count");
+      list.innerHTML = "";
+      try {
+        const res = await fetch(`/api/cars/${encodeURIComponent(plate)}/oil`);
+        const data = await res.json();
+        const items = data.items || [];
+        cnt.textContent = `(${items.length})`;
+        if (!items.length) {
+          list.innerHTML = `<div class="muted">No oil record.</div>`;
+          return;
+        }
+        items.forEach(o => {
+          const div = document.createElement("div");
+          div.className = "item oil-item";
+          div.innerHTML = `
+            <div class="head">
+              <div class="name"><a href="#" data-name="${o.name}">${o.title || o.name}</a></div>
+            </div>
+            <div class="body"><pre></pre></div>
+          `;
+          div.querySelector("a").addEventListener("click", async (ev) => {
+            ev.preventDefault();
+            if (div.classList.contains("open")) { div.classList.remove("open"); return; }
+            try {
+              const r = await fetch(`/api/cars/${encodeURIComponent(plate)}/oil/${encodeURIComponent(o.name)}`);
+              const j = await r.json();
+              div.querySelector("pre").textContent = JSON.stringify(j, null, 2);
+              div.classList.add("open");
+            } catch (_) {}
+          });
+          list.appendChild(div);
+        });
+      } catch (e) {
+        list.innerHTML = `<div class="status err">Error: ${e.message}</div>`;
+      }
+    }
+
+    document.getElementById("save-car").addEventListener("click", async () => {
+      carStatus.textContent = "Saving...";
+      carStatus.className = "status";
+      // Merge edits into the loaded car so mpmoil/photo/variant fields are preserved.
+      const body = Object.assign({}, carData, {
+        plate,
+        customer_name: document.getElementById("customer_name").value.trim(),
+        customer_phone: document.getElementById("customer_phone").value.trim(),
+        notes: document.getElementById("notes").value,
+        vin: document.getElementById("vin").value.trim(),
+        pin: document.getElementById("pin").value.trim(),
+        fuel_type: document.getElementById("fuel_type").value,
+      });
+      showOverlay("Saving…");
+      try {
+        const res = await fetch(`/api/cars/${encodeURIComponent(plate)}`, {
+          method: "PUT",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        snapshotBaseline(); // new values become the baseline; hides Save
+        carStatus.textContent = "Saved.";
+        carStatus.className = "status ok";
+        setTimeout(() => { carStatus.textContent = ""; }, 1500);
+      } catch (e) {
+        carStatus.textContent = "Error: " + e.message;
+        carStatus.className = "status err";
+      } finally {
+        hideOverlay();
+      }
+    });
+
+    document.getElementById("delete-car").addEventListener("click", async (ev) => {
+      if (ev.currentTarget.dataset.blocked === "1") {
+        carStatus.textContent = "Delete all jobs for this car first, then you can delete the car.";
+        carStatus.className = "status err";
+        return;
+      }
+      if (!confirm("Delete car AND all its jobs/oil archive? This cannot be undone.")) return;
+      showOverlay("Deleting…");
+      try {
+        await fetch(`/api/cars/${encodeURIComponent(plate)}`, { method: "DELETE" });
+      } finally {
+        hideOverlay();
+      }
+      window.location.href = "/cars.html";
+    });
+
+    document.getElementById("new-job").addEventListener("click", () => {
+      window.location.href = `/job.html?plate=${encodeURIComponent(plate)}`;
+    });
+
+    // Photo upload / delete handlers
+    const photoStatus = document.getElementById("photo-status");
+    const photoInput = document.getElementById("photo-input");
+    // Clicking the "No photo yet" placeholder opens the file picker.
+    document.getElementById("no-photo").addEventListener("click", () => {
+      photoInput.click();
+    });
+    photoInput.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        photoStatus.textContent = "Please choose an image file.";
+        photoStatus.className = "status err";
+        photoInput.value = "";
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = async () => {
+        showOverlay("Uploading photo…");
+        try {
+          const res = await fetch(`/api/cars/${encodeURIComponent(plate)}/photo`, {
+            method: "POST",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({
+              filename: file.name,
+              data_base64: reader.result,
+            }),
+          });
+          if (!res.ok) throw new Error(await errFromRes(res));
+          const j = await res.json();
+          carData.photo = j.filename;
+          carData.photo_updated_ms = j.photo_updated_ms;
+          refreshPhoto(j.filename, j.photo_updated_ms);
+          // If changed from the full-screen view, update that image too.
+          if (lightbox.classList.contains("open")) {
+            lightboxImg.src = document.getElementById("car-photo").src;
+          }
+          photoStatus.textContent = "Photo saved.";
+          photoStatus.className = "status ok";
+          setTimeout(() => { photoStatus.textContent = ""; }, 1500);
+        } catch (err) {
+          photoStatus.textContent = "Error: " + err.message;
+          photoStatus.className = "status err";
+        } finally {
+          hideOverlay();
+          photoInput.value = "";
+        }
+      };
+      reader.onerror = () => {
+        photoStatus.textContent = "Could not read file.";
+        photoStatus.className = "status err";
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Lightbox: click photo to enlarge, click backdrop / × / Esc to close
+    const lightbox = document.getElementById("lightbox");
+    const lightboxImg = document.getElementById("lightbox-img");
+    document.getElementById("car-photo").addEventListener("click", () => {
+      const src = document.getElementById("car-photo").src;
+      if (!src) return;
+      lightboxImg.src = src;
+      lightbox.classList.add("open");
+    });
+    function closeLightbox() {
+      lightbox.classList.remove("open");
+      lightboxImg.removeAttribute("src");
+    }
+    document.getElementById("lb-change").addEventListener("click", () => photoInput.click());
+    lightbox.addEventListener("click", (e) => {
+      if (e.target === lightbox || e.target.id === "lightbox-img") closeLightbox();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && lightbox.classList.contains("open")) closeLightbox();
+    });
+
+    document.getElementById("lb-delete").addEventListener("click", async () => {
+      if (!confirm("Delete this photo?")) return;
+      showOverlay("Deleting…");
+      try {
+        const res = await fetch(`/api/cars/${encodeURIComponent(plate)}/photo`, { method: "DELETE" });
+        if (!res.ok) throw new Error(await errFromRes(res));
+        delete carData.photo;
+        delete carData.photo_updated_ms;
+        refreshPhoto(null);
+        closeLightbox();
+        photoStatus.textContent = "Photo deleted.";
+        photoStatus.className = "status ok";
+        setTimeout(() => { photoStatus.textContent = ""; }, 1500);
+      } catch (err) {
+        photoStatus.textContent = "Error: " + err.message;
+        photoStatus.className = "status err";
+      } finally {
+        hideOverlay();
+      }
+    });
+
+    loadCar();
+    loadJobs();
+    loadOils();
+  </script>
+</body>
+
+</html>

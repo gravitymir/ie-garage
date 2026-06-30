@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jobs - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0;
+      padding: 20px;
+      color: #111;
+      background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home { text-decoration: none; color: #3275ac; font-weight: 600; }
+    .toolbar {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    input[type="search"] {
+      font-family: inherit; padding: 8px 10px; border: 1px solid #bbb;
+      border-radius: 4px; font-size: 14px; flex: 1; min-width: 200px;
+    }
+    /* Main page search — doubled font size */
+    #search {
+      font-size: 28px;
+      padding: 10px 14px;
+    }
+    .muted { color: #666; font-size: 13px; margin: 8px 0; }
+    .table-wrap {
+      background: #fff; border: 1px solid #ccc; border-radius: 6px;
+      overflow: auto; max-height: 80vh;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td {
+      border-bottom: 1px solid #eee; padding: 8px 10px; text-align: left;
+    }
+    th {
+      background: #f0f0f0; position: sticky; top: 0; z-index: 1;
+      font-weight: 600; color: #333;
+    }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #eef5fa; }
+    .plate { color: #3275ac; font-weight: 900; }
+    /* Compact width for the "Last activity" cell — fits "DD.MM.YYYY HH:MM"
+       (16 chars) plus a status mark and a space. */
+    .col-last { width: 20ch; white-space: nowrap; }
+    .col-plate { width: 10ch; }
+    .vehicle-cell .mk { color: #555; font-size: 0.85em; margin-right: 4px; }
+    .st-fin { color: #2a7;  font-weight: 900; }   /* Finished — green check */
+    .st-pau { color: #c80;  font-weight: 900; }   /* Paused — orange */
+    .st-op  { color: #3275ac; font-weight: 900; } /* Open — blue dot */
+    .vehicle-cell { font-size: 12px; }
+    .vehicle-cell .mk    { color: #555; }
+    .vehicle-cell .md    { color: #111; font-weight: 600; margin-left: 4px; }
+    .vehicle-cell .sep   { color: #aaa; margin: 0 6px; }
+    .vehicle-cell .eng   { color: #444; }
+    .vehicle-cell .disp  { color: #3275ac; font-weight: 700; }
+    .vehicle-cell .fuel-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      margin-left: 8px;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      border-radius: 3px;
+      border: 1px solid;
+      vertical-align: middle;
+    }
+  </style>
+  <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/fuel-detect.js"></script>  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <a class="home" href="/index.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; Home</a>
+      <h1>Jobs</h1>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search by plate, customer, make, model..." />
+  </div>
+
+  <div class="muted" id="status">Loading...</div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-last">Last activity</th>
+          <th class="col-plate">Plate</th>
+          <th>Vehicle</th>
+          <th>Worker</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const rows = document.getElementById("rows");
+    const statusEl = document.getElementById("status");
+    const searchEl = document.getElementById("search");
+    let items = [];
+
+    function fmt(ms) {
+      if (!ms) return "";
+      const d = new Date(ms);
+      const p = n => String(n).padStart(2, "0");
+      return `${p(d.getDate())}.${p(d.getMonth()+1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    function statusBadge(s) {
+      switch (String(s || "").toLowerCase()) {
+        case "finished": return `<span class="st-fin" title="Finished">✓</span>`;
+        case "paused":   return `<span class="st-pau" title="Paused">⏸</span>`;
+        case "open":     return `<span class="st-op"  title="Open">●</span>`;
+        default:         return "";
+      }
+    }
+
+    function render() {
+      const q = (searchEl.value || "").toLowerCase().trim();
+      const filtered = items.filter(it => {
+        if (!q) return true;
+        return [it.plate, it.make, it.model, it.worker_name, it.status]
+          .some(v => String(v || "").toLowerCase().includes(q));
+      });
+      rows.innerHTML = "";
+      if (!filtered.length) {
+        statusEl.textContent = items.length ? "No matches." : "No jobs yet.";
+        return;
+      }
+      statusEl.textContent = `${filtered.length} job${filtered.length===1?"":"s"}`;
+      // Defensive sort on the client too (the API already sorts by last_active_ms desc).
+      filtered.sort((a, b) =>
+        (b.last_active_ms || b.saved_ms || 0) - (a.last_active_ms || a.saved_ms || 0)
+      );
+      filtered.forEach(it => {
+        const tr = document.createElement("tr");
+        const lastMs = it.last_active_ms || it.saved_ms || 0;
+        const make = (it.make || "").trim();
+        const model = (it.model || "").trim();
+        const eng = (it.engine_summary || "").trim();
+        const disp = (it.displacement || "").trim();
+        const fuel = (it.fuel_type || "").trim().toLowerCase();
+        // Build the vehicle strip piece by piece — each piece may be empty
+        // for older / manually-added cars, so we collect non-empty ones and
+        // join them with "·" separators.
+        const pieces = [];
+        if (make || model) {
+          pieces.push(
+            (make ? `<span class="mk">${esc(make)}</span>` : "") +
+            (model ? `<span class="md">${esc(model)}</span>` : "")
+          );
+        }
+        if (eng)  pieces.push(`<span class="eng">${esc(eng)}</span>`);
+        if (disp) pieces.push(`<span class="disp">${esc(disp)} L</span>`);
+        let vehicleHtml = pieces.join(`<span class="sep">·</span>`);
+        // Trailing fuel badge.
+        if (fuel && typeof window.fuelTypeMeta === "function") {
+          const meta = window.fuelTypeMeta(fuel);
+          vehicleHtml += ` <span class="fuel-badge" style="color:${meta.color};background:${meta.bg};border-color:${meta.color};">${esc(meta.label)}</span>`;
+        }
+        tr.innerHTML = `
+          <td class="col-last">${statusBadge(it.status)} ${fmt(lastMs)}</td>
+          <td class="plate col-plate">${it.plate || ""}</td>
+          <td class="vehicle-cell">${vehicleHtml}</td>
+          <td>${it.worker_name || ""}</td>
+        `;
+        tr.addEventListener("click", () => {
+          window.location.href = `/job.html?plate=${encodeURIComponent(it.plate)}&file=${encodeURIComponent(it.name)}`;
+        });
+        rows.appendChild(tr);
+      });
+
+      function esc(s) {
+        const d = document.createElement("div");
+        d.textContent = s == null ? "" : String(s);
+        return d.innerHTML;
+      }
+    }
+
+    searchEl.addEventListener("input", () => {
+      const pos = searchEl.selectionStart;
+      searchEl.value = searchEl.value.toUpperCase();
+      try { searchEl.setSelectionRange(pos, pos); } catch (_) {}
+      render();
+    });
+
+    async function load() {
+      try {
+        const res = await fetch("/api/jobs");
+        const data = await res.json();
+        items = data.items || [];
+        render();
+      } catch (e) {
+        statusEl.textContent = "Error: " + e;
+      }
+    }
+    load();
+  </script>
+</body>
+
+</html>
