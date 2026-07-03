@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stocktake - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center;
+      gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 16px; margin-bottom: 16px;
+    }
+    .card h2 {
+      margin: 0 0 12px 0; font-size: 1.1rem; color: #3275ac;
+    }
+    .muted { color: #666; font-size: 13px; }
+
+    .drop {
+      border: 2px dashed #bbb; border-radius: 8px;
+      padding: 30px 20px; text-align: center;
+      background: #fafafa; cursor: pointer;
+      transition: border-color .12s, background .12s;
+    }
+    .drop.hover { border-color: #3275ac; background: #eaf2f8; }
+    .drop .big { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+    .drop .sub { color: #666; font-size: 12px; }
+    .drop input[type=file] { display: none; }
+
+    textarea {
+      font-family: inherit; width: 100%;
+      padding: 10px; border: 1px solid #bbb; border-radius: 4px;
+      font-size: 13px; resize: vertical;
+    }
+
+    .mode-row {
+      display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap;
+      font-size: 13px;
+    }
+    .mode-row label {
+      display: inline-flex; align-items: center; gap: 6px;
+      cursor: pointer;
+    }
+    .mode-row .hint {
+      display: block; color: #666; font-size: 11px; margin-left: 22px;
+    }
+
+    .actions {
+      display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap;
+    }
+    button {
+      font-family: inherit; padding: 10px 18px;
+      border-radius: 4px; cursor: pointer; font-size: 14px;
+      border: 1px solid #3275ac;
+    }
+    button.primary { background: #3275ac; color: #fff; }
+    button.primary:hover { opacity: 0.9; }
+    button.secondary {
+      background: #fff; color: #3275ac;
+    }
+    button.secondary:hover { background: #eaf2f8; }
+    button.danger {
+      background: #d64545; border-color: #d64545; color: #fff;
+      font-weight: 700;
+    }
+    button.danger:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .summary-row {
+      display: flex; gap: 16px; flex-wrap: wrap;
+      padding: 12px; background: #f0f6fb; border-radius: 6px;
+      margin-bottom: 12px;
+    }
+    .summary-row .cell {
+      display: flex; flex-direction: column;
+    }
+    .summary-row .k { font-size: 11px; color: #666; text-transform: uppercase; }
+    .summary-row .v { font-size: 1.4rem; font-weight: 700; color: #3275ac; }
+
+    table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    th, td {
+      text-align: left; padding: 6px 8px;
+      border-bottom: 1px solid #eee;
+    }
+    th {
+      background: #f5f5f5; font-weight: 700; color: #555;
+      position: sticky; top: 0;
+    }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tr.pos td.diff { color: #1a7a1a; font-weight: 700; }
+    tr.neg td.diff { color: #c0392b; font-weight: 700; }
+    tr.zero td.diff { color: #888; }
+
+    .section-title {
+      margin: 18px 0 6px 0; font-weight: 700;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-title .count {
+      background: #3275ac; color: #fff;
+      padding: 2px 8px; border-radius: 10px; font-size: 11px;
+    }
+    .section-title.warn .count { background: #d68b18; }
+    .section-title.err .count  { background: #d64545; }
+
+    .toast {
+      padding: 10px 14px; border-radius: 6px;
+      margin-bottom: 12px; font-size: 13px;
+    }
+    .toast.ok   { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+    .toast.err  { background: #fbe6e6; color: #8b1a1a; border: 1px solid #c0392b; }
+    .toast.info { background: #eaf2f8; color: #1c4a70; border: 1px solid #3275ac; }
+
+    .scroll-box {
+      max-height: 400px; overflow-y: auto;
+      border: 1px solid #eee; border-radius: 4px;
+    }
+    .help {
+      font-size: 12px; color: #666; margin-top: 8px;
+      background: #f5f5f5; padding: 10px; border-radius: 4px;
+      border-left: 3px solid #3275ac;
+    }
+    .help code {
+      background: #fff; padding: 1px 4px; border-radius: 3px;
+      border: 1px solid #ddd; font-size: 11px;
+    }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/store.html">Store</a>
+    <h1>Stocktake — apply barcode scans to stock counts</h1>
+  </div>
+
+  <div id="toast-holder"></div>
+
+  <!-- Step 1: upload the scanner file. -->
+  <div class="card">
+    <h2>1. Upload scanner file</h2>
+    <div class="drop" id="drop">
+      <div class="big">Drop file here, or click to pick one</div>
+      <div class="sub">Any .txt / .csv from your Android scanner app — one code per line.</div>
+      <input type="file" id="file" accept=".txt,.csv,.log,text/plain,text/csv" />
+    </div>
+    <div style="margin-top:12px;">
+      <div class="muted" style="margin-bottom:4px;">Or paste scans directly:</div>
+      <textarea id="text" rows="6" placeholder="6959655449112&#10;6959655449112&#10;1KE-3220007425&#10;# comment lines starting with # are ignored"></textarea>
+    </div>
+    <div class="help">
+      <b>Format:</b> one scan per line. Duplicates are counted (3 lines with the
+      same code = quantity 3). Or use <code>code,count</code> (or tab / space
+      separated) if your scanner already sums them, e.g. <code>6959655449112,3</code>.
+      Lines starting with <code>#</code> are ignored.
+    </div>
+
+    <div class="mode-row">
+      <label>
+        <input type="radio" name="mode" value="strict" checked />
+        <b>Strict</b> — full stocktake
+      </label>
+      <label>
+        <input type="radio" name="mode" value="partial" />
+        <b>Partial</b> — only touch scanned items
+      </label>
+    </div>
+    <div class="hint" style="color:#666;font-size:11px;margin-top:4px;">
+      Strict: items you didn't scan are set to <b>0</b> (you counted everything, so absent = zero on shelf).
+      Partial: unmatched items stay untouched.
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="preview-btn">Preview</button>
+      <button class="secondary" id="clear-btn">Clear</button>
+    </div>
+  </div>
+
+  <!-- Step 2: preview report. Filled by JS after Preview click. -->
+  <div class="card" id="report-card" style="display:none;">
+    <h2>2. Preview</h2>
+    <div id="report"></div>
+    <div class="actions" id="apply-actions" style="display:none;">
+      <button class="danger" id="apply-btn">Apply changes to stock</button>
+      <span class="muted">This overwrites <code>current_count</code> on each affected item.</span>
+    </div>
+  </div>
+
+  <script>
+    const drop = document.getElementById("drop");
+    const fileInput = document.getElementById("file");
+    const textArea = document.getElementById("text");
+    const previewBtn = document.getElementById("preview-btn");
+    const clearBtn = document.getElementById("clear-btn");
+    const reportCard = document.getElementById("report-card");
+    const reportEl = document.getElementById("report");
+    const applyActions = document.getElementById("apply-actions");
+    const applyBtn = document.getElementById("apply-btn");
+    const toastHolder = document.getElementById("toast-holder");
+
+    let lastPreview = null;
+
+    // ----- File pick / drop -----
+    drop.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (f) loadFile(f);
+    });
+    drop.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      drop.classList.add("hover");
+    });
+    drop.addEventListener("dragleave", () => drop.classList.remove("hover"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("hover");
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) loadFile(f);
+    });
+
+    function loadFile(f) {
+      const r = new FileReader();
+      r.onload = () => {
+        textArea.value = String(r.result || "");
+        toast("info", `Loaded ${f.name} (${textArea.value.split(/\r?\n/).filter(l => l.trim()).length} non-empty lines).`);
+      };
+      r.readAsText(f);
+    }
+
+    // ----- Actions -----
+    clearBtn.addEventListener("click", () => {
+      textArea.value = "";
+      fileInput.value = "";
+      reportCard.style.display = "none";
+      reportEl.innerHTML = "";
+      applyActions.style.display = "none";
+      lastPreview = null;
+      clearToasts();
+    });
+
+    previewBtn.addEventListener("click", async () => {
+      const text = textArea.value.trim();
+      if (!text) { toast("err", "No scan data — paste text or drop a file first."); return; }
+      const mode = document.querySelector('input[name="mode"]:checked').value;
+      await runStocktake(text, mode, false);
+    });
+
+    applyBtn.addEventListener("click", async () => {
+      const mode = document.querySelector('input[name="mode"]:checked').value;
+      const summary = lastPreview
+        ? `${lastPreview.updates.length} items to update` +
+          (lastPreview.not_scanned && lastPreview.not_scanned.length
+             ? `, plus ${lastPreview.not_scanned.length} items set to 0 (strict mode)` : "")
+        : "";
+      if (!confirm(`Apply stocktake?\n\n${summary}\n\nThis writes new current_count values. Cannot be undone.`)) return;
+      await runStocktake(textArea.value.trim(), mode, true);
+    });
+
+    async function runStocktake(text, mode, apply) {
+      clearToasts();
+      previewBtn.disabled = true;
+      applyBtn.disabled = true;
+      try {
+        const res = await fetch("/api/stocktake", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, mode, apply }),
+        });
+        if (!res.ok) {
+          toast("err", `Server error: ${res.status} ${res.statusText}`);
+          return;
+        }
+        const data = await res.json();
+        lastPreview = data;
+        renderReport(data);
+        if (apply) {
+          toast("ok", `Applied. ${data.applied_writes} items updated on disk.` +
+            (data.write_errors && data.write_errors.length
+              ? ` ${data.write_errors.length} write errors — see report.` : ""));
+          applyActions.style.display = "none";
+        } else {
+          const parts = [];
+          parts.push(`${data.total_scans} scans`);
+          parts.push(`${data.unique_codes} unique codes`);
+          parts.push(`${data.items_matched} items matched`);
+          if (data.unmatched && data.unmatched.length)
+            parts.push(`${data.unmatched.length} unmatched codes`);
+          toast("info", "Preview: " + parts.join(", ") + ". Review below, then Apply.");
+          applyActions.style.display = "flex";
+        }
+      } catch (e) {
+        toast("err", "Request failed: " + e.message);
+      } finally {
+        previewBtn.disabled = false;
+        applyBtn.disabled = false;
+      }
+    }
+
+    // ----- Report rendering -----
+    function renderReport(data) {
+      reportCard.style.display = "block";
+      reportEl.innerHTML = "";
+
+      // Summary counters.
+      const sum = document.createElement("div");
+      sum.className = "summary-row";
+      sum.innerHTML = `
+        <div class="cell"><span class="k">Total scans</span><span class="v">${data.total_scans}</span></div>
+        <div class="cell"><span class="k">Unique codes</span><span class="v">${data.unique_codes}</span></div>
+        <div class="cell"><span class="k">Items matched</span><span class="v">${data.items_matched}</span></div>
+        <div class="cell"><span class="k">Unmatched codes</span><span class="v">${(data.unmatched || []).length}</span></div>
+        <div class="cell"><span class="k">Mode</span><span class="v">${data.mode || "strict"}</span></div>
+      `;
+      reportEl.appendChild(sum);
+
+      // Write errors — only if apply=true and something failed.
+      if (data.write_errors && data.write_errors.length) {
+        const t = document.createElement("div");
+        t.className = "toast err";
+        t.innerHTML = `<b>Write errors (${data.write_errors.length}):</b><br>` +
+          data.write_errors.map(esc).join("<br>");
+        reportEl.appendChild(t);
+      }
+
+      // Updates.
+      const updates = data.updates || [];
+      const upTitle = document.createElement("div");
+      upTitle.className = "section-title";
+      upTitle.innerHTML = `Matched items <span class="count">${updates.length}</span>`;
+      reportEl.appendChild(upTitle);
+      if (updates.length) {
+        reportEl.appendChild(renderCountTable(updates));
+      } else {
+        const m = document.createElement("div");
+        m.className = "muted"; m.textContent = "No scanned codes matched any items in stock.";
+        reportEl.appendChild(m);
+      }
+
+      // Unmatched codes.
+      const unmatched = data.unmatched || [];
+      if (unmatched.length) {
+        const t = document.createElement("div");
+        t.className = "section-title warn";
+        t.innerHTML = `Unmatched codes <span class="count">${unmatched.length}</span>`;
+        reportEl.appendChild(t);
+        const wrap = document.createElement("div");
+        wrap.className = "scroll-box";
+        const tbl = document.createElement("table");
+        tbl.innerHTML = `
+          <thead><tr><th>Code</th><th class="num">Scans</th></tr></thead>
+          <tbody>${unmatched.map(u => `
+            <tr>
+              <td><code>${esc(u.code)}</code></td>
+              <td class="num">${u.count}</td>
+            </tr>`).join("")}
+          </tbody>`;
+        wrap.appendChild(tbl);
+        reportEl.appendChild(wrap);
+        const help = document.createElement("div");
+        help.className = "help";
+        help.innerHTML =
+          "These codes aren't listed on any store item's <b>Barcodes / QR codes / SKUs</b> field. " +
+          "Open the matching item's edit page and paste the code into that field, then re-run Preview.";
+        reportEl.appendChild(help);
+      }
+
+      // Not-scanned items (strict only).
+      const notScanned = data.not_scanned || [];
+      if (notScanned.length) {
+        const t = document.createElement("div");
+        t.className = "section-title err";
+        t.innerHTML = `Not scanned — will be set to 0 <span class="count">${notScanned.length}</span>`;
+        reportEl.appendChild(t);
+        reportEl.appendChild(renderCountTable(notScanned));
+        const help = document.createElement("div");
+        help.className = "help";
+        help.innerHTML =
+          "Strict mode assumes you counted every item. Anything you didn't scan " +
+          "is currently on stock (current_count > 0) but will be zeroed out. " +
+          "Switch to <b>Partial</b> mode if the scan file only covers a subset.";
+        reportEl.appendChild(help);
+      }
+    }
+
+    function renderCountTable(rows) {
+      const wrap = document.createElement("div");
+      wrap.className = "scroll-box";
+      const tbl = document.createElement("table");
+      tbl.innerHTML = `
+        <thead><tr>
+          <th>Item</th>
+          <th>Part #</th>
+          <th class="num">Was</th>
+          <th class="num">Now</th>
+          <th class="num">Δ</th>
+        </tr></thead>
+        <tbody>${rows.map(r => {
+          const diff = r.diff;
+          const cls = diff > 0 ? "pos" : diff < 0 ? "neg" : "zero";
+          const sign = diff > 0 ? "+" : "";
+          const href = r.id ? `/store-item.html?id=${encodeURIComponent(r.id)}` : "#";
+          return `
+            <tr class="${cls}">
+              <td><a href="${href}" target="_blank" style="color:#3275ac;text-decoration:none;">${esc(r.name || "(unnamed)")}</a></td>
+              <td>${esc(r.id_number || "")}</td>
+              <td class="num">${r.was}</td>
+              <td class="num">${r.now}</td>
+              <td class="num diff">${sign}${diff}</td>
+            </tr>`;
+        }).join("")}</tbody>`;
+      wrap.appendChild(tbl);
+      return wrap;
+    }
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s == null ? "" : String(s);
+      return d.innerHTML;
+    }
+    function toast(kind, msg) {
+      const t = document.createElement("div");
+      t.className = "toast " + kind;
+      t.textContent = msg;
+      toastHolder.appendChild(t);
+    }
+    function clearToasts() { toastHolder.innerHTML = ""; }
+  </script>
+</body>
+
+</html>

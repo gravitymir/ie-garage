@@ -27,6 +27,8 @@ cars/
 workers/
 store/
 autofill/
+settings/
+chat/
 database/
 
 # ---------- local tooling ----------

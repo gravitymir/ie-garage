@@ -61,6 +61,24 @@
       font-size: 0.7rem; font-weight: 900; letter-spacing: 0.05em;
       padding: 2px 8px; border-radius: 10px; border: 1px solid;
     }
+    /* "ANY" chip — animated rainbow gradient so it clearly reads as
+       "applies to every engine type". White text with a dark shadow so it
+       stays readable over any colour in the gradient. */
+    .rule .fuel-chip-any {
+      color: #fff;
+      border-color: transparent;
+      background: linear-gradient(
+        90deg,
+        #ff5b5b, #ffb84d, #ffe23b, #56d556, #4ec3ff, #b17dff, #ff6db4, #ff5b5b
+      );
+      background-size: 200% 100%;
+      animation: rainbow-slide 4s linear infinite;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    }
+    @keyframes rainbow-slide {
+      from { background-position:   0% 50%; }
+      to   { background-position: 200% 50%; }
+    }
     .rule .oil-chip {
       font-size: 0.7rem; font-weight: 900; letter-spacing: 0.05em;
       padding: 2px 8px; border-radius: 10px;
@@ -87,11 +105,12 @@
 <body>
   <div class="topbar">
     <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/settings.html">&larr; Settings</a>
     <h1>Autofill rules</h1>
   </div>
 
   <div class="toolbar">
-    <input type="search" id="search" placeholder="Search by name, trigger, part..." list="rule-name-suggestions" autocomplete="off" />
+    <input type="search" id="search" placeholder="Search by name" list="rule-name-suggestions" autocomplete="off" />
     <datalist id="rule-name-suggestions"></datalist>
   </div>
 
@@ -161,12 +180,15 @@
         else if (typeof r.applies_to === "string" && r.applies_to.trim()) appliesList = [r.applies_to.trim().toLowerCase()];
         else appliesList = [];
         const specific = appliesList.filter(s => s && s !== "any");
-        const fuelChip = (specific.length && typeof window.fuelTypeMeta === "function")
+        // Fuel-specific rules get one solid chip per fuel type. "Any" rules
+        // (empty applies_to, or the literal "any" token) get a single
+        // rainbow-gradient chip so they're visually distinct at a glance.
+        const fuelChip = specific.length && typeof window.fuelTypeMeta === "function"
           ? specific.map(f => {
               const m = window.fuelTypeMeta(f);
               return `<span class="fuel-chip" style="color:${m.color};background:${m.bg};border-color:${m.color};">${esc(m.label)}</span>`;
             }).join("")
-          : "";
+          : `<span class="fuel-chip fuel-chip-any" title="Applies to any engine type">ANY ENGINE</span>`;
         // Engine-oil chip — shown when the rule appends MPM oils on autofill.
         const oilsOn = !!(r.oils && r.oils.enabled);
         const olderYears = Number((r.oils && r.oils.older_than_years) || 0);

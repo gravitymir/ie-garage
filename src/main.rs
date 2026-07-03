@@ -52,9 +52,6 @@ fn base_dir() -> PathBuf {
 fn cars_dir() -> PathBuf {
     PathBuf::from("cars")
 }
-fn parts_dir() -> PathBuf {
-    PathBuf::from("parts")
-}
 fn workers_dir() -> PathBuf {
     PathBuf::from("workers")
 }
@@ -67,11 +64,26 @@ fn store_items_dir() -> PathBuf {
 fn store_divisions_file() -> PathBuf {
     store_dir().join("divisions.json")
 }
+fn store_division_photos_dir() -> PathBuf {
+    store_dir().join("division-photos")
+}
 fn autofill_dir() -> PathBuf {
     PathBuf::from("autofill")
 }
 fn autofill_rules_file() -> PathBuf {
     autofill_dir().join("rules.json")
+}
+fn settings_dir() -> PathBuf {
+    PathBuf::from("settings")
+}
+fn settings_file() -> PathBuf {
+    settings_dir().join("settings.json")
+}
+fn chat_dir() -> PathBuf {
+    PathBuf::from("chat")
+}
+fn chat_messages_file() -> PathBuf {
+    chat_dir().join("messages.json")
 }
 fn legacy_database_dir() -> PathBuf {
     PathBuf::from("database")
@@ -127,14 +139,19 @@ async fn main() {
 
     // Ensure storage roots exist
     let _ = std::fs::create_dir_all(cars_dir());
-    let _ = std::fs::create_dir_all(parts_dir());
     let _ = std::fs::create_dir_all(workers_dir());
     let _ = std::fs::create_dir_all(store_items_dir());
+    let _ = std::fs::create_dir_all(store_division_photos_dir());
     // Seed empty divisions file if missing
     if !store_divisions_file().exists() {
         let _ = std::fs::write(store_divisions_file(), "[]");
     }
     let _ = std::fs::create_dir_all(autofill_dir());
+    let _ = std::fs::create_dir_all(settings_dir());
+    let _ = std::fs::create_dir_all(chat_dir());
+    if !chat_messages_file().exists() {
+        let _ = std::fs::write(chat_messages_file(), "[]");
+    }
     if !autofill_rules_file().exists() {
         let _ = std::fs::write(autofill_rules_file(), "[]");
     }
@@ -188,17 +205,6 @@ async fn main() {
         )
         // all jobs (global)
         .route("/api/jobs", get(list_all_jobs))
-        // parts
-        .route("/api/parts", get(list_parts).post(create_part))
-        .route(
-            "/api/parts/:id",
-            get(get_part).put(update_part).delete(delete_part),
-        )
-        .route("/api/parts/:id/images", post(upload_part_image))
-        .route(
-            "/api/parts/:id/images/:filename",
-            delete(delete_part_image),
-        )
         // workers
         .route("/api/workers", get(list_workers).post(create_worker))
         .route(
@@ -234,6 +240,12 @@ async fn main() {
             "/api/store/divisions/:id",
             put(update_division).delete(delete_division),
         )
+        .route(
+            "/api/store/divisions/:id/photo",
+            get(get_division_photo)
+                .post(upload_division_photo)
+                .delete(delete_division_photo),
+        )
         // store items
         .route(
             "/api/store/items",
@@ -253,9 +265,30 @@ async fn main() {
             "/api/store/items/:id/images/:filename",
             delete(delete_store_item_image),
         )
-        // serve car + part + store images
+        // Stocktake: bulk-apply barcodes-from-scanner file to current_count.
+        .route("/api/stocktake", post(stocktake))
+        // Shared workshop chat — one JSON on disk everyone reads from.
+        .route(
+            "/api/chat/feed",
+            get(list_chat_feed).post(post_chat_message),
+        )
+        .route("/api/chat/event", post(post_chat_event))
+        // Settings: one shared JSON blob (branding, screensaver, print flags)
+        // plus a separate logo file for anything that shows a company mark.
+        .route("/api/settings", get(get_settings).put(update_settings))
+        .route(
+            "/api/settings/logo",
+            get(get_settings_logo)
+                .post(upload_settings_logo)
+                .delete(delete_settings_logo),
+        )
+        // Browsers auto-request /favicon.ico with no HTML link tag needed.
+        // Serve the SVG file for that path with an image/svg+xml MIME —
+        // modern browsers (Chrome/Firefox/Safari/Edge) all accept an SVG
+        // under the .ico URL and render it just fine.
+        .route("/favicon.ico", get(serve_favicon))
+        // serve car + store images
         .nest_service("/cars-files", ServeDir::new("cars"))
-        .nest_service("/parts-files", ServeDir::new("parts"))
         .nest_service("/store-files", ServeDir::new("store"))
         .fallback_service(ServeDir::new(public_dir))
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
@@ -1017,6 +1050,11 @@ struct JobItem {
     time_in: String,
     time_out: String,
     work_summary: String,
+    // Status shown as a badge next to each row on car.html. Same vocabulary
+    // as jobs.html: open / paused / work_done / closed. Legacy "finished"
+    // records surface as "finished" here — the frontend maps them to
+    // "closed" for display.
+    status: String,
 }
 
 async fn list_car_jobs(Path(plate): Path<String>) -> Result<Json<Value>, (StatusCode, String)> {
@@ -1072,6 +1110,19 @@ async fn list_car_jobs(Path(plate): Path<String>) -> Result<Json<Value>, (Status
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map(|d| d.as_millis())
             .unwrap_or(0);
+        let status = json
+            .get("status")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                // Fallback for pre-status records: derive from the legacy
+                // boolean flag.
+                if json.get("finished").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    "finished".to_string()
+                } else {
+                    "open".to_string()
+                }
+            });
         items.push(JobItem {
             name,
             saved_ms,
@@ -1079,6 +1130,7 @@ async fn list_car_jobs(Path(plate): Path<String>) -> Result<Json<Value>, (Status
             time_in,
             time_out,
             work_summary,
+            status,
         });
     }
     items.sort_by(|a, b| b.saved_ms.cmp(&a.saved_ms));
@@ -1241,6 +1293,10 @@ struct GlobalJobItem {
     fuel_type: String,
     displacement: String,    // "1.4", "2.0" – from variant name
     engine_summary: String,  // "CJCB · 136HP, 100KW, 4200RPM · 5 L"
+    // True when the car has a photo on disk — used by the hover-preview on
+    // /jobs.html to know whether to try loading /api/cars/:plate/photo/thumb.
+    has_photo: bool,
+    photo_updated_ms: u128,  // cache-buster for the thumb URL
 }
 
 /// Build the compact engine summary string from a car's first oil archive.
@@ -1390,6 +1446,20 @@ async fn list_all_jobs() -> Result<Json<Value>, (StatusCode, String)> {
         // job of that car below).
         let engine_summary = build_engine_summary(&car_path);
 
+        // Photo state per car (once) — the hover-preview on /jobs.html asks
+        // for the thumb only when `has_photo` is true, so unfilled cars don't
+        // trigger a 404 image request per hover.
+        let has_photo = car_json
+            .get("photo")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let photo_updated_ms = car_json
+            .get("photo_updated_ms")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as u128)
+            .unwrap_or(0);
+
         let jobs_dir = car_path.join("jobs");
         if !jobs_dir.is_dir() {
             continue;
@@ -1473,6 +1543,8 @@ async fn list_all_jobs() -> Result<Json<Value>, (StatusCode, String)> {
                 fuel_type: fuel_type.clone(),
                 displacement: displacement.clone(),
                 engine_summary: engine_summary.clone(),
+                has_photo,
+                photo_updated_ms,
             });
         }
     }
@@ -1480,250 +1552,10 @@ async fn list_all_jobs() -> Result<Json<Value>, (StatusCode, String)> {
     Ok(Json(json!({ "items": items })))
 }
 
-// ---------- parts catalog ----------
-
-#[derive(Serialize)]
-struct PartSummary {
-    id: String,
-    name: String,
-    number: String,
-    description: String,
-    notes: String,
-    images: Vec<String>,
-    created_ms: u128,
-    updated_ms: u128,
-}
-
-fn read_part_dir(dir: &std::path::Path) -> Option<PartSummary> {
-    let id = dir.file_name()?.to_str()?.to_string();
-    let part_json: Value = std::fs::read_to_string(dir.join("part.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())?;
-    let name = part_json
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let number = part_json
-        .get("number")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let description = part_json
-        .get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let notes = part_json
-        .get("notes")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let created_ms = part_json
-        .get("created_ms")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as u128)
-        .unwrap_or(0);
-    let updated_ms = part_json
-        .get("updated_ms")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as u128)
-        .unwrap_or(0);
-
-    let images_dir = dir.join("images");
-    let mut images = Vec::new();
-    if images_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&images_dir) {
-            for e in entries.flatten() {
-                if let Some(n) = e.file_name().to_str() {
-                    images.push(n.to_string());
-                }
-            }
-        }
-    }
-    images.sort();
-    Some(PartSummary {
-        id,
-        name,
-        number,
-        description,
-        notes,
-        images,
-        created_ms,
-        updated_ms,
-    })
-}
-
-async fn list_parts() -> Result<Json<Value>, (StatusCode, String)> {
-    let dir = parts_dir();
-    if !dir.exists() {
-        return Ok(Json(json!({ "items": [] })));
-    }
-    let mut items: Vec<PartSummary> = Vec::new();
-    for entry in std::fs::read_dir(&dir)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .flatten()
-    {
-        let p = entry.path();
-        if !p.is_dir() {
-            continue;
-        }
-        if let Some(summary) = read_part_dir(&p) {
-            items.push(summary);
-        }
-    }
-    items.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms));
-    Ok(Json(json!({ "items": items })))
-}
-
-async fn get_part(Path(id): Path<String>) -> Result<Json<Value>, (StatusCode, String)> {
-    let id = sanitize_filename(&id);
-    let dir = parts_dir().join(&id);
-    let summary = read_part_dir(&dir)
-        .ok_or((StatusCode::NOT_FOUND, "part not found".to_string()))?;
-    Ok(Json(serde_json::to_value(summary).unwrap_or(Value::Null)))
-}
-
-async fn create_part(
-    Json(mut payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, String)> {
-    let id = format!("p-{}", now_millis());
-    let dir = parts_dir().join(&id);
-    std::fs::create_dir_all(dir.join("images"))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if let Some(obj) = payload.as_object_mut() {
-        obj.insert("id".to_string(), Value::String(id.clone()));
-        obj.insert(
-            "created_ms".to_string(),
-            Value::Number(serde_json::Number::from(now_millis() as u64)),
-        );
-        obj.insert(
-            "updated_ms".to_string(),
-            Value::Number(serde_json::Number::from(now_millis() as u64)),
-        );
-    }
-    let pretty = serde_json::to_string_pretty(&payload)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    std::fs::write(dir.join("part.json"), pretty)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(json!({ "ok": true, "id": id })))
-}
-
-async fn update_part(
-    Path(id): Path<String>,
-    Json(mut payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, String)> {
-    let id = sanitize_filename(&id);
-    let dir = parts_dir().join(&id);
-    if !dir.exists() {
-        return Err((StatusCode::NOT_FOUND, "part not found".to_string()));
-    }
-    // Preserve created_ms from existing file
-    let existing: Value = std::fs::read_to_string(dir.join("part.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or(Value::Null);
-    let created_ms = existing
-        .get("created_ms")
-        .and_then(|v| v.as_u64())
-        .unwrap_or_else(|| now_millis() as u64);
-    if let Some(obj) = payload.as_object_mut() {
-        obj.insert("id".to_string(), Value::String(id.clone()));
-        obj.insert(
-            "created_ms".to_string(),
-            Value::Number(serde_json::Number::from(created_ms)),
-        );
-        obj.insert(
-            "updated_ms".to_string(),
-            Value::Number(serde_json::Number::from(now_millis() as u64)),
-        );
-    }
-    let pretty = serde_json::to_string_pretty(&payload)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    std::fs::write(dir.join("part.json"), pretty)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(json!({ "ok": true, "id": id })))
-}
-
-async fn delete_part(Path(id): Path<String>) -> Result<Json<Value>, (StatusCode, String)> {
-    let id = sanitize_filename(&id);
-    let dir = parts_dir().join(&id);
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    }
-    Ok(Json(json!({ "ok": true })))
-}
-
-async fn upload_part_image(
-    Path(id): Path<String>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, String)> {
-    let id = sanitize_filename(&id);
-    let dir = parts_dir().join(&id).join("images");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let raw_name = payload
-        .get("filename")
-        .and_then(|v| v.as_str())
-        .unwrap_or("image.png");
-    let data_b64 = payload
-        .get("data_base64")
-        .and_then(|v| v.as_str())
-        .ok_or((StatusCode::BAD_REQUEST, "data_base64 required".to_string()))?;
-
-    // Strip data URL prefix if present
-    let b64_clean = if let Some(idx) = data_b64.find("base64,") {
-        &data_b64[idx + 7..]
-    } else {
-        data_b64
-    };
-
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(b64_clean.trim())
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-
-    // Make filename unique with timestamp prefix
-    let safe = sanitize_filename(raw_name);
-    let safe = if safe.is_empty() { "image.png".to_string() } else { safe };
-    let file_name = format!("{}-{}", now_millis(), safe);
-
-    std::fs::write(dir.join(&file_name), bytes)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    // Bump part updated_ms
-    let part_json_path = parts_dir().join(&id).join("part.json");
-    if let Ok(content) = std::fs::read_to_string(&part_json_path) {
-        if let Ok(mut v) = serde_json::from_str::<Value>(&content) {
-            if let Some(obj) = v.as_object_mut() {
-                obj.insert(
-                    "updated_ms".to_string(),
-                    Value::Number(serde_json::Number::from(now_millis() as u64)),
-                );
-                let _ = std::fs::write(
-                    &part_json_path,
-                    serde_json::to_string_pretty(&v).unwrap_or(content),
-                );
-            }
-        }
-    }
-
-    Ok(Json(json!({ "ok": true, "filename": file_name })))
-}
-
-async fn delete_part_image(
-    Path((id, filename)): Path<(String, String)>,
-) -> Result<Json<Value>, (StatusCode, String)> {
-    let id = sanitize_filename(&id);
-    let filename = sanitize_filename(&filename);
-    let path = parts_dir().join(&id).join("images").join(&filename);
-    if path.exists() {
-        std::fs::remove_file(&path)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    }
-    Ok(Json(json!({ "ok": true })))
-}
+// ---------- parts catalog removed — superseded by /api/store/items ----------
+// The parts catalog was a strict subset of Store (same fields, no stock
+// counts / divisions / barcodes). Its endpoints and disk folder were
+// removed; Store handles both "what this part is + photos" and inventory.
 
 // ---------- workers ----------
 
@@ -2409,11 +2241,43 @@ async fn list_divisions() -> Result<Json<Value>, (StatusCode, String)> {
                     "item_count".to_string(),
                     Value::Number(serde_json::Number::from(count as u64)),
                 );
+                // Derived: does this division have a photo on disk?
+                // Presence is more reliable than a stored flag (photo files
+                // can be deleted out-of-band).
+                obj.insert(
+                    "has_photo".to_string(),
+                    Value::Bool(find_division_photo(&id).is_some()),
+                );
+                // Default missing fields so the frontend can rely on shape.
+                obj.entry("description")
+                    .or_insert(Value::String(String::new()));
             }
             d
         })
         .collect();
     Ok(Json(json!({ "items": enriched })))
+}
+
+// Find whichever photo file lives for a given division id (any supported ext).
+fn find_division_photo(id: &str) -> Option<PathBuf> {
+    let dir = store_division_photos_dir();
+    if !dir.is_dir() {
+        return None;
+    }
+    let stem = sanitize_filename(id);
+    let entries = std::fs::read_dir(&dir).ok()?;
+    for e in entries.flatten() {
+        let p = e.path();
+        if !p.is_file() {
+            continue;
+        }
+        if let Some(name) = p.file_stem().and_then(|s| s.to_str()) {
+            if name == stem {
+                return Some(p);
+            }
+        }
+    }
+    None
 }
 
 async fn create_division(
@@ -2445,21 +2309,33 @@ async fn update_division(
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
     let id = sanitize_filename(&id);
-    let new_name = payload
+    // Partial update: any of name / description may be present. name, when
+    // provided, must be non-empty (it's the visible label). description is
+    // optional and can be an empty string to clear it.
+    let name_update = payload
         .get("name")
         .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    if new_name.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "name is required".to_string()));
+        .map(|s| s.trim().to_string());
+    let desc_update = payload
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string());
+    if let Some(n) = &name_update {
+        if n.is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "name is required".to_string()));
+        }
     }
     let mut list = read_divisions();
     let mut found = false;
     for d in list.iter_mut() {
         if d.get("id").and_then(|v| v.as_str()) == Some(&id) {
             if let Some(obj) = d.as_object_mut() {
-                obj.insert("name".to_string(), Value::String(new_name.clone()));
+                if let Some(n) = &name_update {
+                    obj.insert("name".to_string(), Value::String(n.clone()));
+                }
+                if let Some(desc) = &desc_update {
+                    obj.insert("description".to_string(), Value::String(desc.clone()));
+                }
                 obj.insert(
                     "updated_ms".to_string(),
                     Value::Number(serde_json::Number::from(now_millis() as u64)),
@@ -2472,6 +2348,91 @@ async fn update_division(
         return Err((StatusCode::NOT_FOUND, "division not found".to_string()));
     }
     write_divisions(&list)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ---------- store: division photos ----------
+
+async fn get_division_photo(
+    Path(id): Path<String>,
+) -> Result<Response, (StatusCode, String)> {
+    let path = find_division_photo(&id)
+        .ok_or((StatusCode::NOT_FOUND, "no photo".to_string()))?;
+    let bytes = std::fs::read(&path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mime = match path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "application/octet-stream",
+    };
+    let mut resp = Response::new(bytes.into());
+    resp.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(mime));
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    Ok(resp)
+}
+
+async fn upload_division_photo(
+    Path(id): Path<String>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let id = sanitize_filename(&id);
+    // Must reference a real division — refuse orphan photos.
+    let list = read_divisions();
+    let exists = list
+        .iter()
+        .any(|d| d.get("id").and_then(|v| v.as_str()) == Some(&id));
+    if !exists {
+        return Err((StatusCode::NOT_FOUND, "division not found".to_string()));
+    }
+    let raw_name = payload
+        .get("filename")
+        .and_then(|v| v.as_str())
+        .unwrap_or("photo.png");
+    let data_b64 = payload
+        .get("data_base64")
+        .and_then(|v| v.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "data_base64 required".to_string()))?;
+    let b64_clean = if let Some(idx) = data_b64.find("base64,") {
+        &data_b64[idx + 7..]
+    } else {
+        data_b64
+    };
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64_clean.trim())
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let ext = std::path::Path::new(raw_name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase())
+        .filter(|s| ["png", "jpg", "jpeg", "svg", "webp", "gif"].contains(&s.as_str()))
+        .unwrap_or_else(|| "png".to_string());
+
+    std::fs::create_dir_all(store_division_photos_dir())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Drop any pre-existing photo (different ext) so only one file per id lives.
+    if let Some(old) = find_division_photo(&id) {
+        let _ = std::fs::remove_file(old);
+    }
+    let target = store_division_photos_dir().join(format!("{}.{}", id, ext));
+    std::fs::write(&target, bytes)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn delete_division_photo(
+    Path(id): Path<String>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    if let Some(p) = find_division_photo(&id) {
+        std::fs::remove_file(&p)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -2518,6 +2479,9 @@ struct StoreItemSummary {
     wheel_type: String,
     wheel_pcd: String,
     wheel_et: String,
+    // Barcodes / QR codes / manufacturer SKUs that scanners will match on.
+    // Any code the user wants associated with this item goes here.
+    barcodes: Vec<String>,
     images: Vec<String>,
     created_ms: u128,
     updated_ms: u128,
@@ -2579,6 +2543,16 @@ fn read_store_item_dir(dir: &std::path::Path) -> Option<StoreItemSummary> {
     let wheel_type = str_of("wheel_type");
     let wheel_pcd = str_of("wheel_pcd");
     let wheel_et = str_of("wheel_et");
+    let barcodes: Vec<String> = item_json
+        .get("barcodes")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
     let created_ms = item_json
         .get("created_ms")
         .and_then(|v| v.as_u64())
@@ -2619,6 +2593,7 @@ fn read_store_item_dir(dir: &std::path::Path) -> Option<StoreItemSummary> {
         wheel_type,
         wheel_pcd,
         wheel_et,
+        barcodes,
         images,
         created_ms,
         updated_ms,
@@ -2694,6 +2669,29 @@ fn normalize_store_payload(payload: &mut Value) {
                 obj.insert(k.to_string(), Value::Number(serde_json::Number::from(n)));
             }
         }
+        // Barcodes: accept an array of strings or a newline / comma-separated
+        // single string. Trim, drop empties, dedupe (case-insensitive), keep order.
+        let raw = obj.remove("barcodes").unwrap_or(Value::Null);
+        let candidates: Vec<String> = match raw {
+            Value::Array(arr) => arr
+                .into_iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect(),
+            Value::String(s) => s
+                .split(|c: char| c == '\n' || c == ',')
+                .map(|s| s.to_string())
+                .collect(),
+            _ => Vec::new(),
+        };
+        let mut seen = std::collections::HashSet::<String>::new();
+        let normalised: Vec<Value> = candidates
+            .into_iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .filter(|s| seen.insert(s.to_lowercase()))
+            .map(Value::String)
+            .collect();
+        obj.insert("barcodes".to_string(), Value::Array(normalised));
     }
 }
 
@@ -2839,4 +2837,644 @@ async fn delete_store_item_image(
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
     Ok(Json(json!({ "ok": true })))
+}
+
+// ---------- stocktake (inventory audit from scanner file) ----------
+//
+// Workflow: user scans every item in the warehouse on a phone / handheld
+// scanner; the app dumps a file of barcodes; user uploads that file here.
+// We match codes against `barcodes[]` on each store item and either report
+// a preview (apply=false) or write the new `current_count` values back
+// (apply=true).
+//
+// Input file: one scan per non-empty line. Lines starting with `#` are
+// treated as comments. If a line has a numeric second token (comma /
+// whitespace / tab separated), it's used as the count for that code —
+// otherwise each line counts as one scan.
+//
+// mode = "strict" (default): items that were never scanned are set to 0
+//        (a full stocktake covered everything, absence = zero on shelf).
+// mode = "partial":          only matched items are touched; the rest are
+//        left as they were.
+
+#[derive(serde::Deserialize)]
+struct StocktakePayload {
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    apply: bool,
+    #[serde(default)]
+    mode: Option<String>,
+}
+
+async fn stocktake(
+    Json(payload): Json<StocktakePayload>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    use std::collections::HashMap;
+
+    // 1. Parse the file into a per-code count map.
+    let mut counts: HashMap<String, i64> = HashMap::new();
+    let mut total_scans: i64 = 0;
+    let mut lines_parsed: i64 = 0;
+    for raw_line in payload.text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        lines_parsed += 1;
+        // Split on comma / tab / whitespace; keep the first non-empty token
+        // as the code. If a second token is a positive int, it's the count.
+        let tokens: Vec<&str> = line
+            .split(|c: char| c == ',' || c == '\t' || c.is_whitespace())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if tokens.is_empty() {
+            continue;
+        }
+        let code = tokens[0].trim().to_string();
+        if code.is_empty() {
+            continue;
+        }
+        let count: i64 = if tokens.len() >= 2 {
+            tokens[1].trim().parse::<i64>().ok().filter(|n| *n > 0).unwrap_or(1)
+        } else {
+            1
+        };
+        *counts.entry(code).or_insert(0) += count;
+        total_scans += count;
+    }
+    let unique_codes = counts.len();
+
+    // 2. Load every store item and build code(lower) -> item_index map.
+    let items = read_all_store_items();
+    let mut code_to_item: HashMap<String, usize> = HashMap::new();
+    for (i, item) in items.iter().enumerate() {
+        if let Some(bcs) = item.get("barcodes").and_then(|v| v.as_array()) {
+            for b in bcs {
+                if let Some(s) = b.as_str() {
+                    let norm = s.trim().to_lowercase();
+                    if !norm.is_empty() {
+                        // Last wins; if two items share a barcode, we can't
+                        // decide which — flag it in the report.
+                        code_to_item.insert(norm, i);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Match scans -> items. Accumulate per-item scanned totals and
+    //    collect unmatched codes.
+    let mut item_scans: HashMap<usize, i64> = HashMap::new();
+    let mut unmatched: Vec<(String, i64)> = Vec::new();
+    for (code, cnt) in &counts {
+        let key = code.trim().to_lowercase();
+        if let Some(&idx) = code_to_item.get(&key) {
+            *item_scans.entry(idx).or_insert(0) += cnt;
+        } else {
+            unmatched.push((code.clone(), *cnt));
+        }
+    }
+    unmatched.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    // 4. Build the updates list (matched items with was/now/diff).
+    let item_field = |item: &Value, key: &str| -> String {
+        item.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let item_i64 = |item: &Value, key: &str| -> i64 {
+        item.get(key)
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+    };
+
+    let mut updates: Vec<Value> = Vec::new();
+    for (&idx, &now) in &item_scans {
+        let item = &items[idx];
+        let was = item_i64(item, "current_count");
+        updates.push(json!({
+            "id": item_field(item, "id"),
+            "name": item_field(item, "name"),
+            "id_number": item_field(item, "id_number"),
+            "was": was,
+            "now": now,
+            "diff": now - was,
+        }));
+    }
+    updates.sort_by(|a, b| {
+        let an = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let bn = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        an.to_lowercase().cmp(&bn.to_lowercase())
+    });
+
+    // 5. Strict mode: items that weren't scanned drop to 0 (skipping ones
+    //    already at 0 — no change to report).
+    let mode = payload
+        .mode
+        .as_deref()
+        .unwrap_or("strict")
+        .trim()
+        .to_lowercase();
+    let strict = mode != "partial";
+    let mut not_scanned: Vec<Value> = Vec::new();
+    if strict {
+        for (i, item) in items.iter().enumerate() {
+            if item_scans.contains_key(&i) {
+                continue;
+            }
+            let was = item_i64(item, "current_count");
+            if was == 0 {
+                continue;
+            }
+            not_scanned.push(json!({
+                "id": item_field(item, "id"),
+                "name": item_field(item, "name"),
+                "id_number": item_field(item, "id_number"),
+                "was": was,
+                "now": 0,
+                "diff": -was,
+            }));
+        }
+        not_scanned.sort_by(|a, b| {
+            let an = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let bn = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            an.to_lowercase().cmp(&bn.to_lowercase())
+        });
+    }
+
+    // 6. Apply — write current_count back to disk. Only when apply=true.
+    let mut applied_writes = 0i64;
+    let mut write_errors: Vec<String> = Vec::new();
+    if payload.apply {
+        let mut targets: Vec<(String, i64)> = Vec::new();
+        for (&idx, &now) in &item_scans {
+            if let Some(id) = items[idx].get("id").and_then(|v| v.as_str()) {
+                targets.push((id.to_string(), now));
+            }
+        }
+        if strict {
+            for (i, item) in items.iter().enumerate() {
+                if item_scans.contains_key(&i) {
+                    continue;
+                }
+                let was = item_i64(item, "current_count");
+                if was == 0 {
+                    continue;
+                }
+                if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+                    targets.push((id.to_string(), 0));
+                }
+            }
+        }
+        for (id, new_count) in &targets {
+            match write_store_item_count(id, *new_count) {
+                Ok(()) => applied_writes += 1,
+                Err(e) => write_errors.push(format!("{}: {}", id, e)),
+            }
+        }
+    }
+
+    Ok(Json(json!({
+        "ok": true,
+        "applied": payload.apply,
+        "mode": if strict { "strict" } else { "partial" },
+        "lines_parsed": lines_parsed,
+        "total_scans": total_scans,
+        "unique_codes": unique_codes,
+        "items_matched": item_scans.len(),
+        "updates": updates,
+        "unmatched": unmatched
+            .into_iter()
+            .map(|(c, n)| json!({ "code": c, "count": n }))
+            .collect::<Vec<_>>(),
+        "not_scanned": not_scanned,
+        "applied_writes": applied_writes,
+        "write_errors": write_errors,
+    })))
+}
+
+fn write_store_item_count(id: &str, new_count: i64) -> Result<(), String> {
+    let id = sanitize_filename(id);
+    let path = store_items_dir().join(&id).join("item.json");
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut v: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "current_count".to_string(),
+            Value::Number(serde_json::Number::from(new_count)),
+        );
+        obj.insert(
+            "updated_ms".to_string(),
+            Value::Number(serde_json::Number::from(now_millis() as u64)),
+        );
+    }
+    let pretty = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ---------- settings (branding, screensaver, print flags, logo) ----------
+//
+// Single JSON at settings/settings.json plus a separate logo file
+// (settings/logo.<ext>). The whole app can read /api/settings on load to
+// pull the company name for titles/topbars; index.html additionally uses
+// the idle / logo fields to drive its screensaver overlay.
+
+fn settings_defaults() -> Value {
+    json!({
+        "company_name": "",
+        "company_phone": "",
+        "company_address": "",
+        "screensaver_enabled": true,
+        "screensaver_idle_minutes": 10,
+        "screensaver_bg_color": "#000000",
+        "print_show_logo": true,
+        // Chat notifications — per-event toggles. Defaults to "everything on"
+        // so new installs get the full workshop feed; users can mute noise
+        // via Settings → Chat.
+        "chat_notify_job_started": true,
+        // "job_finished" historically covered Work done — keep the key so
+        // pre-existing settings.json files still gate that event.
+        "chat_notify_job_finished": true,
+        // Split off from finished so QC-returned jobs and delivered ones can
+        // be muted independently. Default true so a fresh install sees the
+        // full flow.
+        "chat_notify_job_reopened": true,
+        "chat_notify_job_closed": true,
+        "chat_notify_stock_arrival": true,
+        "chat_notify_low_stock": true,
+        // Chat feed retention. Three fields combine into one duration so the
+        // user can say e.g. "1 month" or "15 days" or "12 hours" naturally.
+        // 0 in every slot means "no limit — keep everything".
+        "chat_retention_months": 0,
+        "chat_retention_days":   0,
+        "chat_retention_hours":  0,
+        // When true, messages past the retention window get PURGED from
+        // localStorage on every render pass. When false they're just hidden
+        // from the feed (so raising the limit later brings them back).
+        "chat_retention_delete": false,
+        // Chat auto-close on inactivity. Three fields combine:
+        //   use_screensaver = true  → idle = screensaver_idle_minutes * pct/100
+        //   use_screensaver = false → idle = fallback_minutes
+        // If use_screensaver is on but screensaver_idle_minutes is 0, we
+        // also fall through to fallback_minutes.
+        "chat_autoclose_use_screensaver": true,
+        "chat_autoclose_screensaver_pct": 30,
+        "chat_autoclose_fallback_minutes": 2,
+        // Notification sound for new incoming chat items. Volume 0-100.
+        // We only play for items that came in from the server (poll), never
+        // for messages the local user just typed themselves.
+        "chat_sound_enabled": true,
+        "chat_sound_volume": 60,
+    })
+}
+
+// Find whichever logo file lives in settings/ regardless of extension.
+// We save as "logo.<ext>" (jpg/png/svg/webp) — first match wins.
+fn find_settings_logo() -> Option<PathBuf> {
+    let dir = settings_dir();
+    if !dir.is_dir() {
+        return None;
+    }
+    let entries = std::fs::read_dir(&dir).ok()?;
+    for e in entries.flatten() {
+        let p = e.path();
+        if !p.is_file() {
+            continue;
+        }
+        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+            if stem.eq_ignore_ascii_case("logo") {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+async fn get_settings() -> Result<Json<Value>, (StatusCode, String)> {
+    let mut current = settings_defaults();
+    if let Ok(txt) = std::fs::read_to_string(settings_file()) {
+        if let Ok(parsed) = serde_json::from_str::<Value>(&txt) {
+            // Merge over defaults so newly-added keys always have a value.
+            if let (Some(cur), Some(new)) = (current.as_object_mut(), parsed.as_object()) {
+                for (k, v) in new {
+                    cur.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+    if let Some(obj) = current.as_object_mut() {
+        obj.insert("has_logo".to_string(), Value::Bool(find_settings_logo().is_some()));
+    }
+    Ok(Json(current))
+}
+
+async fn update_settings(
+    Json(mut payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    // Read + merge so partial PUTs (e.g. just screensaver) don't wipe branding.
+    let mut current = settings_defaults();
+    if let Ok(txt) = std::fs::read_to_string(settings_file()) {
+        if let Ok(parsed) = serde_json::from_str::<Value>(&txt) {
+            if let (Some(cur), Some(new)) = (current.as_object_mut(), parsed.as_object()) {
+                for (k, v) in new {
+                    cur.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+    if let (Some(cur), Some(new)) = (current.as_object_mut(), payload.as_object_mut()) {
+        // has_logo is derived from disk, not stored — reject any attempt to set it.
+        new.remove("has_logo");
+        // Coerce numeric fields written as strings ("10" → 10). Applies to
+        // every numeric setting we accept so form inputs that submit as text
+        // still land in settings.json as numbers.
+        for key in [
+            "screensaver_idle_minutes",
+            "chat_retention_months",
+            "chat_retention_days",
+            "chat_retention_hours",
+            "chat_autoclose_screensaver_pct",
+            "chat_autoclose_fallback_minutes",
+            "chat_sound_volume",
+        ] {
+            if let Some(v) = new.get_mut(key) {
+                if let Some(s) = v.as_str() {
+                    if let Ok(n) = s.trim().parse::<i64>() {
+                        *v = Value::Number(serde_json::Number::from(n));
+                    }
+                }
+            }
+        }
+        for (k, v) in new.iter() {
+            cur.insert(k.clone(), v.clone());
+        }
+    }
+    let pretty = serde_json::to_string_pretty(&current)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    std::fs::create_dir_all(settings_dir())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    std::fs::write(settings_file(), pretty)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn get_settings_logo() -> Result<Response, (StatusCode, String)> {
+    let path = find_settings_logo()
+        .ok_or((StatusCode::NOT_FOUND, "no logo".to_string()))?;
+    let bytes = std::fs::read(&path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mime = match path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "application/octet-stream",
+    };
+    let mut resp = Response::new(bytes.into());
+    resp.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(mime));
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    Ok(resp)
+}
+
+async fn upload_settings_logo(
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    // Same base64 shape as car / store item photo uploads.
+    let raw_name = payload
+        .get("filename")
+        .and_then(|v| v.as_str())
+        .unwrap_or("logo.png");
+    let data_b64 = payload
+        .get("data_base64")
+        .and_then(|v| v.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "data_base64 required".to_string()))?;
+    let b64_clean = if let Some(idx) = data_b64.find("base64,") {
+        &data_b64[idx + 7..]
+    } else {
+        data_b64
+    };
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64_clean.trim())
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // Detect extension from the incoming filename; fall back to .png.
+    let ext = std::path::Path::new(raw_name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase())
+        .filter(|s| ["png", "jpg", "jpeg", "svg", "webp", "gif"].contains(&s.as_str()))
+        .unwrap_or_else(|| "png".to_string());
+
+    std::fs::create_dir_all(settings_dir())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Drop any pre-existing logo file (may have a different extension) so
+    // there's always exactly one logo file on disk.
+    if let Some(old) = find_settings_logo() {
+        let _ = std::fs::remove_file(old);
+    }
+
+    let target = settings_dir().join(format!("logo.{}", ext));
+    std::fs::write(&target, bytes)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn delete_settings_logo() -> Result<Json<Value>, (StatusCode, String)> {
+    if let Some(p) = find_settings_logo() {
+        std::fs::remove_file(&p)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+// Embedded so the exe stays self-contained — no need to ship favicon.svg
+// alongside the binary. If we later edit public/favicon.svg for local dev
+// tweaks, a `cargo build --release` picks up the new bytes automatically.
+static FAVICON_SVG: &[u8] = include_bytes!("../public/favicon.svg");
+
+async fn serve_favicon() -> Response {
+    let mut resp = Response::new(FAVICON_SVG.to_vec().into());
+    resp.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static("image/svg+xml"));
+    // Favicons are safe to cache long — content only changes on redeploy.
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=86400"));
+    resp
+}
+
+// ---------- shared workshop chat ----------
+//
+// One JSON file (`chat/messages.json`) holds the entire feed. Everyone reads
+// from the same file so all browsers on the local network see the same
+// history. Polling is client-driven: while the user has the chat open, the
+// client asks for anything newer than the last message it saw; when the chat
+// is closed we don't hear from that client at all.
+//
+// Retention: `chat_retention_delete: true` in settings.json triggers a
+// physical prune on every read — messages older than the retention window
+// are removed from disk. `false` = keep everything, client filters for
+// display only.
+
+fn read_chat_feed_raw() -> Vec<Value> {
+    std::fs::read_to_string(chat_messages_file())
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<Value>>(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_chat_feed(list: &[Value]) -> Result<(), (StatusCode, String)> {
+    let pretty = serde_json::to_string_pretty(list)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    std::fs::create_dir_all(chat_dir())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    std::fs::write(chat_messages_file(), pretty)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(())
+}
+
+// Read chat_retention_* from settings, return the earliest ts we should
+// keep. Returns None if retention is disabled (all-zero fields).
+fn chat_retention_cutoff() -> Option<u128> {
+    let s = std::fs::read_to_string(settings_file())
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())?;
+    let months = s.get("chat_retention_months").and_then(|v| v.as_i64()).unwrap_or(0).max(0) as u128;
+    let days   = s.get("chat_retention_days")  .and_then(|v| v.as_i64()).unwrap_or(0).max(0) as u128;
+    let hours  = s.get("chat_retention_hours") .and_then(|v| v.as_i64()).unwrap_or(0).max(0) as u128;
+    let total_hours = months * 30 * 24 + days * 24 + hours;
+    if total_hours == 0 {
+        return None;
+    }
+    let window_ms = total_hours * 3600 * 1000;
+    let now = now_millis();
+    Some(now.saturating_sub(window_ms))
+}
+
+// Apply retention (only if delete flag is on) and return the possibly
+// pruned feed. Also physically writes back to disk when it prunes.
+fn apply_chat_retention(mut feed: Vec<Value>) -> Vec<Value> {
+    let should_delete = std::fs::read_to_string(settings_file())
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|s| s.get("chat_retention_delete").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+    if !should_delete {
+        return feed;
+    }
+    let Some(cutoff) = chat_retention_cutoff() else { return feed };
+    let before = feed.len();
+    feed.retain(|it| {
+        it.get("ts")
+            .and_then(|v| v.as_u64())
+            .map(|n| (n as u128) >= cutoff)
+            .unwrap_or(true) // keep entries without ts (shouldn't happen)
+    });
+    if feed.len() != before {
+        let _ = write_chat_feed(&feed);
+    }
+    feed
+}
+
+#[derive(serde::Deserialize)]
+struct ChatFeedQuery {
+    /// Only return messages with ts strictly greater than this.
+    /// Client sends the max ts it already has, so polls only pull new stuff.
+    since: Option<u64>,
+}
+
+async fn list_chat_feed(
+    Query(params): Query<ChatFeedQuery>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let feed = apply_chat_retention(read_chat_feed_raw());
+    let since = params.since.unwrap_or(0) as u128;
+    let items: Vec<&Value> = feed
+        .iter()
+        .filter(|it| {
+            it.get("ts")
+                .and_then(|v| v.as_u64())
+                .map(|n| (n as u128) > since)
+                .unwrap_or(false)
+        })
+        .collect();
+    Ok(Json(json!({ "items": items })))
+}
+
+// Append a value to the feed with a fresh, strictly-monotonic timestamp.
+// Returns the value that was actually stored (with the assigned ts + id).
+fn append_chat_entry(mut entry: Value) -> Result<Value, (StatusCode, String)> {
+    let mut feed = read_chat_feed_raw();
+    // ts monotonically increases so two rapid POSTs don't collide.
+    let last_ts = feed
+        .iter()
+        .filter_map(|it| it.get("ts").and_then(|v| v.as_u64()))
+        .max()
+        .unwrap_or(0);
+    let now = now_millis() as u64;
+    let ts = std::cmp::max(now, last_ts + 1);
+    if let Some(obj) = entry.as_object_mut() {
+        obj.insert("id".to_string(), Value::String(format!("m-{}", ts)));
+        obj.insert("ts".to_string(), Value::Number(serde_json::Number::from(ts)));
+    }
+    feed.push(entry.clone());
+    write_chat_feed(&feed)?;
+    Ok(entry)
+}
+
+#[derive(serde::Deserialize)]
+struct ChatMessageBody {
+    text: String,
+    #[serde(default)]
+    author: String,
+}
+
+async fn post_chat_message(
+    Json(payload): Json<ChatMessageBody>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let text = payload.text.trim();
+    if text.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "text is required".to_string()));
+    }
+    let entry = json!({
+        "type": "msg",
+        "author": payload.author.trim(),
+        "text": text,
+    });
+    let saved = append_chat_entry(entry)?;
+    Ok(Json(json!({ "ok": true, "item": saved })))
+}
+
+#[derive(serde::Deserialize)]
+struct ChatEventBody {
+    text: String,
+    #[serde(default)]
+    kind: String,
+}
+
+async fn post_chat_event(
+    Json(payload): Json<ChatEventBody>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let text = payload.text.trim();
+    if text.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "text is required".to_string()));
+    }
+    // Normalise kind — anything unknown becomes "generic" so the frontend
+    // always has a valid icon.
+    let kind = match payload.kind.as_str() {
+        "wheels" | "checkin" | "done" | "parts" | "generic" => payload.kind,
+        _ => "generic".to_string(),
+    };
+    let entry = json!({
+        "type": "event",
+        "kind": kind,
+        "text": text,
+    });
+    let saved = append_chat_entry(entry)?;
+    Ok(Json(json!({ "ok": true, "item": saved })))
 }

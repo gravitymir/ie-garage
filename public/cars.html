@@ -121,14 +121,16 @@
       line-height: 1.1;
       pointer-events: none;
     }
+    /* Hover preview — the big photo now sits inside a container so we can
+       render a caption strip (plate + make/model) directly below it. The
+       whole block still floats above the card, centred, and fades in on
+       hover exactly like before. */
     .car .thumb-big {
       position: absolute;
       top: -8px;
       left: 50%;             /* centred on the hovered card, grows both ways */
       width: 460px;
       max-width: 92vw;
-      height: auto;          /* keep aspect ratio — show the whole photo, no square crop */
-      object-fit: contain;
       border-radius: 8px;
       border: 1px solid #888;
       background: #fff;
@@ -139,6 +141,27 @@
       transition: opacity 0.15s, transform 0.15s;
       pointer-events: none;
       z-index: 50;
+      overflow: hidden;
+    }
+    .car .thumb-big img {
+      display: block;
+      width: 100%;
+      height: auto;
+      object-fit: contain;
+    }
+    .car .thumb-big .thumb-cap {
+      padding: 10px 14px 12px;
+      background: #fff;
+      border-top: 1px solid #e5e5e5;
+      text-align: center;
+    }
+    .car .thumb-big .cap-plate {
+      font-size: 1.6rem; font-weight: 900;
+      color: #3275ac; letter-spacing: 0.05em;
+    }
+    .car .thumb-big .cap-mm {
+      font-size: 1.05rem; font-weight: 600;
+      color: #222; margin-top: 4px;
     }
     .car:hover .thumb-big {
       opacity: 1;
@@ -359,10 +382,20 @@
         const ver = c.photo_updated_ms || 0;
         const thumbUrl = c.photo ? `/api/cars/${encodeURIComponent(c.plate)}/photo/thumb?v=${ver}` : "";
         const fullUrl = c.photo ? `/api/cars/${encodeURIComponent(c.plate)}/photo?v=${ver}` : "";
-        // Small image = lightweight thumbnail; full-quality image loads only on hover.
+        // Small image = lightweight thumbnail; the hover-preview container
+        // holds the full-quality image (loaded on first hover only) plus a
+        // caption strip with plate + make/model so a passing glance tells
+        // the mechanic both what and whose car it is.
+        const mm = [c.make, c.model].filter(Boolean).join(" ");
         const thumbHtml = c.photo
           ? `<img class="thumb-small" src="${thumbUrl}" alt="" loading="lazy">
-             <img class="thumb-big" data-full="${fullUrl}" alt="" loading="lazy">`
+             <div class="thumb-big">
+               <img data-full="${fullUrl}" alt="" loading="lazy">
+               <div class="thumb-cap">
+                 <div class="cap-plate">${c.plate}</div>
+                 ${mm ? `<div class="cap-mm">${mm}</div>` : ""}
+               </div>
+             </div>`
           : `<div class="thumb-none">no image</div>`;
         a.innerHTML = `
           ${thumbHtml}
@@ -379,10 +412,12 @@
           </div>
         `;
         // Load the full-quality image only the first time the card is hovered.
-        const big = a.querySelector(".thumb-big");
-        if (big) {
+        // The <img> now sits inside .thumb-big instead of being it — descend
+        // one level to find it.
+        const bigImg = a.querySelector(".thumb-big img");
+        if (bigImg) {
           a.addEventListener("mouseenter", () => {
-            if (!big.getAttribute("src") && big.dataset.full) big.src = big.dataset.full;
+            if (!bigImg.getAttribute("src") && bigImg.dataset.full) bigImg.src = bigImg.dataset.full;
           }, { once: true });
         }
         grid.appendChild(a);
@@ -407,6 +442,15 @@
       searchEl.value = searchEl.value.toUpperCase();
       try { searchEl.setSelectionRange(pos, pos); } catch (_) {}
       render();
+    });
+    // Enter in the search field triggers the same flow as clicking the big
+    // "+ Add car" button (opens the modal with the plate pre-filled, or
+    // jumps to the matching car if it already exists).
+    searchEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        document.getElementById("add-btn").click();
+      }
     });
 
     // Modal handling

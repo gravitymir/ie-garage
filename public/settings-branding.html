@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Branding - Settings - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 20px; margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 14px; font-size: 1.1rem; color: #3275ac; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+    .field label { font-size: 12px; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+    .field input, .field textarea {
+      font-family: inherit; font-size: 14px;
+      padding: 8px 10px; border: 1px solid #bbb; border-radius: 4px;
+    }
+    .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    button {
+      font-family: inherit; padding: 10px 18px;
+      border: 1px solid #3275ac; border-radius: 4px;
+      cursor: pointer; font-size: 14px;
+    }
+    button.primary { background: #3275ac; color: #fff; }
+    button.primary:hover { opacity: 0.9; }
+    button.secondary { background: #fff; color: #3275ac; }
+    button.danger {
+      background: #d64545; border-color: #d64545; color: #fff;
+      font-weight: 700;
+    }
+    .logo-preview {
+      display: flex; align-items: center; gap: 20px;
+      padding: 12px; background: #fafafa;
+      border: 1px dashed #bbb; border-radius: 6px;
+      min-height: 130px;
+    }
+    .logo-preview img {
+      max-width: 200px; max-height: 110px; object-fit: contain;
+      background: #fff; padding: 8px; border: 1px solid #eee;
+      border-radius: 4px;
+    }
+    .logo-preview .empty { color: #999; font-size: 13px; }
+    .logo-actions { display: flex; flex-direction: column; gap: 8px; }
+    input[type=file] { display: none; }
+    .toast {
+      padding: 10px 14px; border-radius: 6px;
+      margin-bottom: 12px; font-size: 13px;
+    }
+    .toast.ok  { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+    .toast.err { background: #fbe6e6; color: #8b1a1a; border: 1px solid #c0392b; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/settings.html">&larr; Settings</a>
+    <h1>Branding</h1>
+  </div>
+
+  <div id="toast-holder"></div>
+
+  <div class="card">
+    <h2>Company logo</h2>
+    <div class="logo-preview">
+      <img id="logo-img" alt="Company logo" style="display:none;" />
+      <div class="empty" id="logo-empty">No logo uploaded yet.</div>
+      <div class="logo-actions">
+        <button class="secondary" id="upload-btn">Upload / replace…</button>
+        <button class="danger" id="delete-btn" style="display:none;">Delete logo</button>
+      </div>
+      <input type="file" id="logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif" />
+    </div>
+    <div style="color:#666; font-size:12px; margin-top:8px;">
+      Used in the screensaver overlay on the home page, and (optionally) in
+      the printed job header. PNG, JPG, SVG, or WEBP.
+    </div>
+
+    <!-- The screensaver background sits behind the logo. Matching this to
+         the logo's own background (e.g. white for a white-bg PNG) makes the
+         image edges blend in. Kept alongside the logo on purpose so users
+         see the two together. -->
+    <div class="field" style="margin-top:16px; flex-direction: row; align-items: center; gap: 14px;">
+      <label for="screensaver_bg_color" style="text-transform: uppercase; letter-spacing: 0.05em; font-size: 12px; color: #555;">Screensaver background</label>
+      <input type="color" id="screensaver_bg_color" value="#000000"
+             style="width: 56px; height: 40px; padding: 2px; border: 1px solid #bbb; border-radius: 4px; cursor: pointer;" />
+      <div id="bg-preview" style="width: 56px; height: 40px; border: 1px solid #bbb; border-radius: 4px;"></div>
+      <div style="color:#666; font-size:12px;">
+        Pick white if your logo has a white background so its edges vanish.
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Company info</h2>
+    <div class="field">
+      <label for="company_name">Company name</label>
+      <input type="text" id="company_name" placeholder="e.g. Cleere Auto Services" />
+    </div>
+    <div class="field">
+      <label for="company_phone">Phone</label>
+      <input type="text" id="company_phone" placeholder="+353 …" />
+    </div>
+    <div class="field">
+      <label for="company_address">Address</label>
+      <textarea id="company_address" rows="3" placeholder="Street, town, county"></textarea>
+    </div>
+    <div class="actions">
+      <button class="primary" id="save-btn">Save</button>
+    </div>
+  </div>
+
+  <script>
+    const toastHolder = document.getElementById("toast-holder");
+    const logoImg = document.getElementById("logo-img");
+    const logoEmpty = document.getElementById("logo-empty");
+    const deleteBtn = document.getElementById("delete-btn");
+
+    function toast(kind, msg) {
+      const t = document.createElement("div");
+      t.className = "toast " + kind;
+      t.textContent = msg;
+      toastHolder.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
+    async function load() {
+      try {
+        const res = await fetch("/api/settings");
+        const s = await res.json();
+        document.getElementById("company_name").value = s.company_name || "";
+        document.getElementById("company_phone").value = s.company_phone || "";
+        document.getElementById("company_address").value = s.company_address || "";
+        const bg = String(s.screensaver_bg_color || "#000000");
+        document.getElementById("screensaver_bg_color").value = /^#[0-9a-f]{6}$/i.test(bg) ? bg : "#000000";
+        syncBgPreview();
+        setLogoState(!!s.has_logo);
+      } catch (e) {
+        toast("err", "Could not load settings: " + e.message);
+      }
+    }
+
+    function setLogoState(hasLogo) {
+      if (hasLogo) {
+        logoImg.src = "/api/settings/logo?v=" + Date.now();
+        logoImg.style.display = "";
+        logoEmpty.style.display = "none";
+        deleteBtn.style.display = "";
+      } else {
+        logoImg.src = "";
+        logoImg.style.display = "none";
+        logoEmpty.style.display = "";
+        deleteBtn.style.display = "none";
+      }
+    }
+
+    function syncBgPreview() {
+      const val = document.getElementById("screensaver_bg_color").value || "#000000";
+      const p = document.getElementById("bg-preview");
+      if (p) p.style.background = val;
+    }
+    document.getElementById("screensaver_bg_color").addEventListener("input", syncBgPreview);
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const body = {
+        company_name: document.getElementById("company_name").value.trim(),
+        company_phone: document.getElementById("company_phone").value.trim(),
+        company_address: document.getElementById("company_address").value.trim(),
+        screensaver_bg_color: document.getElementById("screensaver_bg_color").value || "#000000",
+      };
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        toast("ok", "Saved.");
+      } catch (e) {
+        toast("err", "Save failed: " + e.message);
+      }
+    });
+
+    // Logo upload — reuses the base64 pattern from car/store item photo uploads.
+    document.getElementById("upload-btn").addEventListener("click", () => {
+      document.getElementById("logo-file").click();
+    });
+    document.getElementById("logo-file").addEventListener("change", async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = async () => {
+        try {
+          const res = await fetch("/api/settings/logo", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: f.name, data_base64: String(r.result) }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          setLogoState(true);
+          toast("ok", "Logo uploaded.");
+        } catch (err) {
+          toast("err", "Upload failed: " + err.message);
+        }
+      };
+      r.readAsDataURL(f);
+      // Clear the input so re-picking the same filename re-fires change.
+      e.target.value = "";
+    });
+
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm("Remove company logo?")) return;
+      try {
+        const res = await fetch("/api/settings/logo", { method: "DELETE" });
+        if (!res.ok) throw new Error(await res.text());
+        setLogoState(false);
+        toast("ok", "Logo removed.");
+      } catch (e) {
+        toast("err", "Delete failed: " + e.message);
+      }
+    });
+
+    load();
+  </script>
+</body>
+
+</html>

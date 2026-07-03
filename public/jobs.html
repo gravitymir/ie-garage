@@ -54,9 +54,18 @@
     .col-last { width: 20ch; white-space: nowrap; }
     .col-plate { width: 10ch; }
     .vehicle-cell .mk { color: #555; font-size: 0.85em; margin-right: 4px; }
-    .st-fin { color: #2a7;  font-weight: 900; }   /* Finished — green check */
-    .st-pau { color: #c80;  font-weight: 900; }   /* Paused — orange */
-    .st-op  { color: #3275ac; font-weight: 900; } /* Open — blue dot */
+    /* Status marks on the left of the "Last activity" cell — sized 2× so
+       they're readable at a glance across the whole list. line-height 1 +
+       vertical-align middle keeps the row height from ballooning. */
+    .st-fin, .st-pau, .st-op, .st-wd {
+      font-size: 2em; font-weight: 900;
+      display: inline-block; vertical-align: middle;
+      line-height: 1; margin-right: 4px;
+    }
+    .st-fin { color: #2a7;    }   /* Closed / legacy Finished — green check */
+    .st-wd  { color: #b58c00; }   /* Work done — yellow check (mechanic done, not delivered) */
+    .st-pau { color: #c80;    }   /* Paused — orange */
+    .st-op  { color: #3275ac; }   /* Open — blue dot */
     .vehicle-cell { font-size: 12px; }
     .vehicle-cell .mk    { color: #555; }
     .vehicle-cell .md    { color: #111; font-weight: 600; margin-left: 4px; }
@@ -73,6 +82,41 @@
       border-radius: 3px;
       border: 1px solid;
       vertical-align: middle;
+    }
+
+    /* Floating hover-preview — one shared element for the whole page. Sits
+       above everything (z-index) and never blocks clicks (pointer-events:
+       none), so the mechanic can still click the row it's covering.
+       The image lazy-loads on first mouseenter — nothing is fetched at
+       page load. Browser cache handles subsequent hovers instantly. */
+    #hover-preview {
+      position: fixed;
+      display: none;
+      width: 320px;
+      max-width: 40vw;
+      border-radius: 8px;
+      border: 1px solid #888;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 9500;
+    }
+    #hover-preview.on { display: block; }
+    #hover-preview img {
+      display: block;
+      width: 100%;
+      height: auto;
+      object-fit: contain;
+      background: #f5f5f5;
+    }
+    #hover-preview .cap {
+      padding: 6px 10px 8px;
+      text-align: center;
+      font-size: 1.05rem; font-weight: 900;
+      color: #3275ac;
+      letter-spacing: 0.03em;
+      border-top: 1px solid #eee;
     }
   </style>
   <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/fuel-detect.js"></script>  <script src="/chat.js"></script>
@@ -91,6 +135,13 @@
   </div>
 
   <div class="muted" id="status">Loading...</div>
+
+  <!-- Single shared hover-preview element for the whole rows list. Filled
+       on mouseenter of each row; hidden on mouseleave. -->
+  <div id="hover-preview" aria-hidden="true">
+    <img id="hover-preview-img" alt="" />
+    <div class="cap" id="hover-preview-cap"></div>
+  </div>
 
   <div class="table-wrap">
     <table>
@@ -120,8 +171,13 @@
     }
 
     function statusBadge(s) {
+      // Legacy "finished" from before the Work done / Close split is treated
+      // as "closed". work_done gets its own yellow ✓ so QC can spot jobs
+      // waiting for delivery.
       switch (String(s || "").toLowerCase()) {
-        case "finished": return `<span class="st-fin" title="Finished">✓</span>`;
+        case "closed":
+        case "finished": return `<span class="st-fin" title="Closed">✓✓</span>`;
+        case "work_done":return `<span class="st-wd"  title="Work done — awaiting delivery">✓</span>`;
         case "paused":   return `<span class="st-pau" title="Paused">⏸</span>`;
         case "open":     return `<span class="st-op"  title="Open">●</span>`;
         default:         return "";
@@ -147,6 +203,15 @@
       );
       filtered.forEach(it => {
         const tr = document.createElement("tr");
+        // Feed data to the shared hover-preview handler below. Only stamp
+        // has-photo when the backend told us the car actually has one, so
+        // we don't fire pointless 404 image requests on hover.
+        if (it.has_photo) {
+          tr.dataset.plate = it.plate || "";
+          tr.dataset.photoV = String(it.photo_updated_ms || 0);
+          const label = [it.plate, it.make, it.model].filter(s => (s || "").trim()).join(" · ");
+          tr.dataset.previewLabel = label;
+        }
         const lastMs = it.last_active_ms || it.saved_ms || 0;
         const make = (it.make || "").trim();
         const model = (it.model || "").trim();
@@ -196,6 +261,72 @@
       try { searchEl.setSelectionRange(pos, pos); } catch (_) {}
       render();
     });
+
+    // ---------- Hover preview ----------
+    // One shared floating panel that follows the cursor. Lazy: the <img> src
+    // is only set the moment the cursor enters a row that has a photo.
+    // Delegation on tbody keeps a single set of listeners no matter how
+    // many rows are rendered.
+    (function initHoverPreview() {
+      const preview = document.getElementById("hover-preview");
+      const previewImg = document.getElementById("hover-preview-img");
+      const previewCap = document.getElementById("hover-preview-cap");
+      const tbody = document.getElementById("rows");
+      if (!preview || !tbody) return;
+
+      // Track the plate we're currently previewing so we don't reset src on
+      // every mousemove inside the same row (which would restart loading).
+      let currentPlate = "";
+
+      // Position the panel to the RIGHT of and slightly ABOVE the cursor.
+      // Clamps to viewport so it never leaves the visible area.
+      function place(x, y) {
+        const w = preview.offsetWidth  || 320;
+        const h = preview.offsetHeight || 220;
+        let left = x + 20;
+        let top  = y - 40;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        if (left + w + 8 > vw) left = x - w - 20; // flip to the LEFT of the cursor
+        if (left < 8) left = 8;
+        if (top + h + 8 > vh) top = vh - h - 8;
+        if (top < 8) top = 8;
+        preview.style.left = left + "px";
+        preview.style.top  = top  + "px";
+      }
+
+      tbody.addEventListener("mouseover", (e) => {
+        const tr = e.target && e.target.closest ? e.target.closest("tr") : null;
+        if (!tr || !tr.dataset.plate) { hide(); return; }
+        const plate = tr.dataset.plate;
+        if (plate === currentPlate) return; // still on the same row
+        currentPlate = plate;
+        const v = tr.dataset.photoV || "0";
+        // Thumb URL — smaller file than full photo. Lazy: browser only starts
+        // downloading the image on this src assignment.
+        previewImg.src = `/api/cars/${encodeURIComponent(plate)}/photo/thumb?v=${v}`;
+        previewCap.textContent = tr.dataset.previewLabel || plate;
+        preview.classList.add("on");
+        place(e.clientX, e.clientY);
+      });
+
+      tbody.addEventListener("mousemove", (e) => {
+        if (preview.classList.contains("on")) place(e.clientX, e.clientY);
+      });
+
+      function hide() {
+        preview.classList.remove("on");
+        currentPlate = "";
+        // Drop the src so leaving a row doesn't keep a stale image loaded
+        // in the DOM (helps memory when scrolling through hundreds of rows).
+        previewImg.removeAttribute("src");
+      }
+      tbody.addEventListener("mouseleave", hide);
+      // If the image 404s (car folder without photo — shouldn't happen since
+      // has_photo gates this, but just in case), hide the preview instead of
+      // showing a broken-image icon.
+      previewImg.addEventListener("error", hide);
+    })();
 
     async function load() {
       try {

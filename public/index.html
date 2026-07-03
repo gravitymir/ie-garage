@@ -118,13 +118,40 @@
       font-size: 0.85rem;
       color: #666;
     }
+    /* Fullscreen screensaver — shown after N minutes of no activity when a
+       company logo has been uploaded in Settings. Any mouse/keyboard input
+       hides it. Kept inside index.html because this is the only page where
+       the machine is likely to sit idle. */
+    #screensaver {
+      position: fixed; inset: 0;
+      display: none;
+      background: #000; /* JS overrides from settings.screensaver_bg_color */
+      z-index: 9999;
+      cursor: none;
+    }
+    #screensaver.on { display: block; }
+    /* Radial-gradient mask feathers the logo's own rectangle into the
+       background so we don't see a hard image edge. Combined with a
+       background colour that matches the logo's inside, the boundary
+       becomes invisible; with any other colour it becomes a soft fade. */
+    #screensaver img {
+      position: absolute; inset: 0;
+      margin: auto;
+      max-width: 90vw; max-height: 90vh;
+      width: auto; height: auto;
+      object-fit: contain;
+      -webkit-mask-image: radial-gradient(ellipse at center, black 55%, transparent 92%);
+              mask-image: radial-gradient(ellipse at center, black 55%, transparent 92%);
+    }
   </style>
   <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/chat.js"></script>
 </head>
 
 <body>
+  <div id="screensaver"><img id="screensaver-logo" alt="" /></div>
+
   <div class="clock" id="clock"></div>
-  <div class="brand">Cleere Auto Services</div>
+  <div class="brand" id="brand">Cleere Auto Services</div>
 
   <div class="cards">
     <a class="card" href="/cars.html">
@@ -137,32 +164,21 @@
       <div class="label">Jobs</div>
       <div class="desc">All service records</div>
     </a>
-    <a class="card" href="/parts.html">
-      <div class="icon">PRT</div>
-      <div class="label">Parts</div>
-      <div class="desc">Catalog with images</div>
-    </a>
     <a class="card" href="/store.html">
       <div class="icon">STR</div>
       <div class="label">Store</div>
       <div class="desc">Inventory by division</div>
     </a>
-    <a class="card" href="/workers.html">
-      <div class="icon">WRK</div>
-      <div class="label">Workers</div>
-      <div class="desc">Staff and employees</div>
-    </a>
-    <a class="card" href="/autofill.html">
-      <div class="icon">AUT</div>
-      <div class="label">Autofill</div>
-      <div class="desc">Work → parts templates</div>
+    <a class="card" href="/settings.html">
+      <div class="icon">SET</div>
+      <div class="label">Settings</div>
+      <div class="desc">Branding, screensaver, print</div>
     </a>
   </div>
 
   <div class="stats">
     <div class="stat"><div class="n" id="n-cars">-</div><div class="l">cars</div></div>
     <div class="stat"><div class="n" id="n-jobs">-</div><div class="l">jobs</div></div>
-    <div class="stat"><div class="n" id="n-parts">-</div><div class="l">parts</div></div>
     <div class="stat"><div class="n" id="n-store">-</div><div class="l">in store</div></div>
     <div class="stat"><div class="n" id="n-low">-</div><div class="l">low stock</div></div>
     <div class="stat"><div class="n" id="n-autofill">-</div><div class="l">autofill rules</div></div>
@@ -190,7 +206,6 @@
     }
     count("/api/cars", "n-cars");
     count("/api/jobs", "n-jobs");
-    count("/api/parts", "n-parts");
     count("/api/autofill/rules", "n-autofill");
 
     async function storeStats() {
@@ -210,6 +225,60 @@
       } catch (_) {}
     }
     storeStats();
+
+    // ---------- Settings-driven branding + screensaver ----------
+    // Fetch settings once at page load. If a company_name is set, override
+    // the header and page title. If a logo is uploaded AND screensaver is
+    // enabled, arm the idle-timer overlay.
+    (async () => {
+      let s = null;
+      try {
+        const res = await fetch("/api/settings");
+        if (res.ok) s = await res.json();
+      } catch (_) {}
+      if (!s) return;
+
+      // Branding — override the "Cleere Auto Services" title/header if the
+      // user set a custom company name. Leaves the defaults untouched
+      // otherwise so a fresh install still looks branded.
+      const name = String(s.company_name || "").trim();
+      if (name) {
+        document.getElementById("brand").textContent = name;
+        document.title = name;
+      }
+
+      // Screensaver — only arms when a logo file is on disk AND the toggle
+      // is on. Idle threshold comes from settings; default 10 min.
+      if (!(s.has_logo && s.screensaver_enabled)) return;
+      // Floor is 1 minute — this is minutes-not-seconds, so a higher floor
+      // would silently ignore the user's setting.
+      const idleMs = Math.max(1, Number(s.screensaver_idle_minutes) || 10) * 60 * 1000;
+
+      const overlay = document.getElementById("screensaver");
+      const img = document.getElementById("screensaver-logo");
+      img.src = "/api/settings/logo?v=" + Date.now();
+      // Background around the logo — from settings. Validate the hex so a
+      // malformed value can't inject arbitrary CSS via style.background.
+      const bg = String(s.screensaver_bg_color || "#000000");
+      overlay.style.background = /^#[0-9a-f]{6}$/i.test(bg) ? bg : "#000000";
+
+      let lastActivity = Date.now();
+      const bump = () => {
+        lastActivity = Date.now();
+        if (overlay.classList.contains("on")) overlay.classList.remove("on");
+      };
+      ["mousemove", "mousedown", "keydown", "touchstart", "wheel"].forEach(evt =>
+        window.addEventListener(evt, bump, { passive: true })
+      );
+      // Clicking the overlay itself should also dismiss it.
+      overlay.addEventListener("click", bump);
+
+      setInterval(() => {
+        if (Date.now() - lastActivity >= idleMs && !overlay.classList.contains("on")) {
+          overlay.classList.add("on");
+        }
+      }, 1000);
+    })();
   </script>
 </body>
 

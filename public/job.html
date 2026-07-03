@@ -25,6 +25,21 @@
     }
     .plate-link { color: #3275ac; font-weight: 900; letter-spacing: 0.04em; text-decoration: none; }
     .plate-link:hover { text-decoration: underline; }
+    /* Live "today at a glance" clock in the topbar. Format DD.MM HH:MM —
+       no year, no seconds — because when you glance up mid-job you just
+       want the date and the current time. Positioned right after the job
+       number (Home / All Jobs / Back to car / Job: <plate>_N | clock) with
+       a slightly bigger gap so it visually reads as its own block instead
+       of being confused with the job identifier. Kept away from the
+       top-right corner so the logout circle doesn't clip it. */
+    #quick-clock {
+      margin-left: 16px;
+      font-size: 1.25rem; font-weight: 700; color: #3275ac;
+      letter-spacing: 0.02em;
+      padding: 4px 10px;
+      background: #eaf2f8; border: 1px solid #c8dcec; border-radius: 4px;
+      font-variant-numeric: tabular-nums;
+    }
 
     button {
       font-family: inherit; padding: 8px 14px;
@@ -57,6 +72,59 @@
 
     /* compact, horizontal vehicle row */
     .vehicle-compact { display: flex; flex-wrap: wrap; gap: 8px 28px; align-items: center; }
+
+    /* Quick-reference car card. The car photo is now the primary content —
+       it becomes the card's background whenever we know the car has one.
+       The big oil-capacity digits appear ON TOP only when the current job
+       is touching engine oil (an "oil"/viscosity part is listed in Parts
+       used). Without oil in parts, the photo shows cleanly with no overlay. */
+    .oil-card {
+      text-align: center;
+      padding: 1px;
+      background: #fff;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      border: 1px solid #ccc;
+      overflow: hidden;
+      position: relative;
+      min-height: 180px;
+    }
+    /* Overlay dims the photo so the digits are readable — only useful when
+       we're actually overlaying a digit. Without the digit, the photo
+       shows in full colour. */
+    .oil-card.show-cap.has-photo::before {
+      content: "";
+      position: absolute; inset: 0;
+      background: rgba(255, 255, 255, 0.55);
+      pointer-events: none;
+    }
+    .oil-card .oil-cap {
+      display: none; /* only shown when this job is servicing oil */
+      font-size: 12rem; font-weight: 900; color: #111;
+      letter-spacing: -2rem;
+      /* Negative margins pull the glyph past the card's padding so the
+         digits touch the top/bottom/left edges. `overflow: hidden` on the
+         card clips the bleed. */
+      margin: -3rem 0 -3rem -1.5rem;
+      position: relative;
+    }
+    .oil-card.show-cap .oil-cap { display: block; }
+    .oil-card.show-cap.has-photo .oil-cap {
+      text-shadow:
+        0 0 14px rgba(255, 255, 255, 0.9),
+        0 0 4px  rgba(255, 255, 255, 0.95);
+    }
+    .oil-card .oil-grades { display: none; }
+
+    /* Mileage inputs — pale red background when empty so nobody forgets */
+    #mileage-km.empty-warn, #mileage-mi.empty-warn {
+      background-color: #fde8e8;
+      border-color: #e8b0b0;
+    }
+    #mileage-km.empty-warn:focus, #mileage-mi.empty-warn:focus {
+      background-color: #fff;
+    }
     .vehicle-compact .vi { font-size: 14px; }
     .vehicle-compact .vi label {
       font-size: 11px; color: #888; text-transform: uppercase;
@@ -76,7 +144,7 @@
     /* job details: half width, single column */
     .job-details { width: 100%; }
     .job-cols { display: flex; gap: 16px; align-items: flex-start; }
-    .job-left { flex: 0 0 400px; max-width: 400px; }
+    .job-left { flex: 0 0 300px; max-width: 300px; }
     .job-right { flex: 1; min-width: 0; }
     @media (max-width: 800px) {
       .job-cols { flex-direction: column; }
@@ -86,6 +154,14 @@
     .tl-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
     .tl-k { color: #555; }
     .tl-v { font-weight: 600; }
+    .tl-total {
+      margin-top: 10px; padding-top: 8px; border-top: 1px solid #eee;
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 14px;
+    }
+    .tl-total .tl-k { color: #555; }
+    .tl-total .tl-v { font-weight: 700; font-size: 1.15rem; color: #111; }
+    .tl-total.live .tl-v { color: #2a7; }
 
     /* customer/phone parked in the top-right corner */
     .cust-corner { margin-left: auto; text-align: right; font-size: 13px; line-height: 1.5; }
@@ -94,8 +170,12 @@
     /* editable tables */
     .table { display: flex; flex-direction: column; gap: 6px; }
     .trow { display: grid; gap: 8px; align-items: center; }
-    .trow.work  { grid-template-columns: 1fr 70px 70px 80px; }
-    .trow.parts { grid-template-columns: 1fr 160px 70px 70px 80px; }
+    .trow.work  { grid-template-columns: 1fr; }
+    /* PART = 1fr, NUMBER widened to 240px so tire codes like
+       "CARGOMAX 215/60R17C" or long OEM part numbers stay visible. QTY /
+       UNIT / × keep their old widths. PART shrinks by the difference
+       automatically because it's the flex column. */
+    .trow.parts { grid-template-columns: 1fr 240px 70px 70px 36px; }
     .trow.notes { grid-template-columns: 1fr 80px; align-items: start; }
     .trow textarea {
       font-family: inherit; font-size: 14px;
@@ -104,20 +184,59 @@
       box-sizing: border-box; overflow: hidden;
     }
     .thead { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.04em; }
-    .thead.work  { grid-template-columns: 1fr 70px 70px 80px; }
-    .thead.parts { grid-template-columns: 1fr 160px 70px 70px 80px; }
+    .thead.work  { grid-template-columns: 1fr; }
+    .thead.parts { grid-template-columns: 1fr 240px 70px 70px 36px; }
     .thead.notes { grid-template-columns: 1fr 80px; }
-    .rm { padding: 4px 8px; font-size: 12px; background: #fff; color: #c33; border-color: #c33; }
+    .rm {
+      width: 36px; height: 36px;
+      padding: 0; font-size: 14px; line-height: 1;
+      background: #fff; color: #c33; border: 1px solid #c33; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .rm:hover { background: #fde6e6; }
+    /* Centre-align the numeric-ish columns in the parts table. */
+    .trow.parts .pn,
+    .trow.parts .pq,
+    .trow.parts .pun { text-align: center; }
     .add-row { margin-top: 8px; }
     .add-row button { font-size: 13px; padding: 6px 12px; }
 
     .row-btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
-    #finish-btn { background: #2a7; border-color: #2a7; }
+    /* Work done — mechanic-side finish. Plain white / black outline to look
+       distinct from the action-coloured Save and Pause/Resume buttons. Doc
+       stays editable after this (QC / test drive can still fix things). */
+    #work-done-btn {
+      background: #fff; color: #111; border: 1px solid #111;
+    }
+    #work-done-btn:hover { background: #f2f2f2; }
+    /* Reopen — brings a Work-done job back to Open ("QC returned it"). */
+    #reopen-btn {
+      background: #fff; color: #3275ac; border: 1px solid #3275ac;
+    }
+    #reopen-btn:hover { background: #eef4fb; }
+    /* Close & deliver — final, locks the document. Danger colour so the
+       finality is visually obvious. */
+    #close-btn {
+      background: #2a7; color: #fff; border: 1px solid #1c6a52;
+    }
+    #close-btn:hover { opacity: 0.9; }
+    /* One toggling button:
+       - status "open"     → orange outline "Pause job"
+       - status "paused"   → blue outline "Resume job" */
+    #pause-btn { background: #fff; color: #d97706; border-color: #d97706; }
+    #pause-btn:hover { background: #fef3e6; }
+    #pause-btn.paused { color: #3275ac; border-color: #3275ac; }
+    #pause-btn.paused:hover { background: #eef4fb; }
     #print-btn { margin-left: auto; }
     input[readonly], textarea[readonly] { background: #f0f0f0; color: #555; cursor: default; }
     .status-badge { font-weight: 700; font-size: 1.1rem; }
     .status-badge.open { color: #3275ac; }
     .status-badge.paused { color: #b26a00; }
+    /* work_done = intermediate finish (yellow), closed = final (green).
+       Legacy "finished" alias kept for jobs saved before the split. */
+    .status-badge.work_done { color: #b58c00; }
+    .status-badge.closed,
     .status-badge.finished { color: #2a7; }
     .status { font-size: 13px; color: #555; margin: 6px 0; min-height: 18px; }
     .status.err { color: #c33; }
@@ -164,6 +283,7 @@
     <a class="btn-link" href="/jobs.html">&larr; All Jobs</a>
     <a class="btn-link" id="back-to-car" href="/cars.html" style="display:none;">&larr; Back to car</a>
     <h1>Job: <a class="plate-link" id="v-plate" target="_blank" rel="noopener noreferrer"></a><span id="v-jobno" class="plate-link"></span></h1>
+    <span id="quick-clock" title="Today's date and time (no seconds)">—</span>
   </div>
 
   <!-- Shown only when no plate is in the URL -->
@@ -191,18 +311,20 @@
 
     <div class="job-cols">
       <div class="job-left">
+        <div class="card oil-card" id="oil-card" style="display:none;">
+          <div class="oil-cap"><span id="oil-cap-val"></span></div>
+          <div class="oil-grades" id="oil-grades"></div>
+        </div>
         <div class="card job-details">
-          <h2>Job details</h2>
-          <div class="row2">
-            <div class="field">
-              <label>Time in (date &amp; time)</label>
-              <input type="text" id="time-in" placeholder="06.02.2026 09:30" />
-            </div>
-            <div class="field">
-              <label>Time out</label>
-              <input type="text" id="time-out" placeholder="17:00" />
-            </div>
-          </div>
+          <h2>Mileage</h2>
+          <!--
+            Time in / Time out are still kept as hidden inputs so all the
+            existing code (renderTimeline, saveJob, fillJob, finish handler)
+            keeps working; the timeline itself now owns the display of these
+            timestamps.
+          -->
+          <input type="hidden" id="time-in" />
+          <input type="hidden" id="time-out" />
           <div class="row2">
             <div class="field">
               <label>Mileage (km)</label>
@@ -227,6 +349,7 @@
         <div class="card">
           <h2 style="display:flex; align-items:baseline; gap:8px;">Timeline <span class="status-badge" id="status-badge-tl" style="margin-left:auto;"></span></h2>
           <div id="events-list" class="timeline"></div>
+          <div class="tl-total" id="tl-total"></div>
         </div>
       </div>
 
@@ -234,7 +357,7 @@
         <div class="card">
           <h2>Work performed</h2>
           <div class="thead trow work">
-            <div>Description</div><div>Hours</div><div>Min</div><div></div>
+            <div>Description</div>
           </div>
           <datalist id="autofill-triggers"></datalist>
           <div class="table" id="work-body"></div>
@@ -258,7 +381,6 @@
             <option value="m"></option>
           </datalist>
           <div class="table" id="parts-body"></div>
-          <div class="add-row"><button class="secondary" data-add="parts">+ Add part</button></div>
         </div>
 
         <div class="card">
@@ -272,7 +394,12 @@
     <div class="row-btns">
       <button id="save-btn">Save</button>
       <button id="pause-btn" class="secondary">Pause job</button>
-      <button id="finish-btn">Finish job</button>
+      <button id="work-done-btn">Work done</button>
+      <!-- Reopen + Close & deliver only appear once the job is Work done.
+           Kept in the DOM so we don't have to insert them dynamically; UI
+           hides them via display:none otherwise. -->
+      <button id="reopen-btn" style="display:none;">Reopen</button>
+      <button id="close-btn" style="display:none;">Close &amp; deliver</button>
       <button class="secondary" id="print-btn">Print</button>
     </div>
     <div class="status" id="status"></div>
@@ -287,6 +414,15 @@
         <div id="google"></div>
       </div>
     </div>
+
+    <!-- Danger zone — the delete action is destructive and shouldn't sit
+         next to the everyday buttons. Kept at the bottom, out of the way. -->
+    <div id="danger-zone" style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e0d0d0; text-align: right;">
+      <button type="button" id="delete-job-btn"
+              style="background: #fff; color: #c33; border: 1px solid #c33; padding: 8px 16px; font-size: 13px; border-radius: 4px; cursor: pointer; font-family: inherit;">
+        Delete this job
+      </button>
+    </div>
   </div>
 
   <!-- Print sheet (generated on demand) -->
@@ -298,15 +434,65 @@
     function pad(n) { return String(n).padStart(2, "0"); }
     function nowDateTime() {
       const d = new Date();
-      return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} `
+           + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
+
+    // Push a workshop event to the shared chat feed — but only when the
+    // matching toggle is on in Settings → Chat. Settings are cached by
+    // GarageSettings so this doesn't add a fetch per click.
+    // Supported kinds: "job_started" | "job_finished" | "job_reopened" | "job_closed".
+    async function fireChatEvent(kind) {
+      if (!window.GarageChat || !window.GarageSettings) return;
+      let s;
+      try { s = await window.GarageSettings.get(); } catch (_) { return; }
+      if (!s) return;
+      const flag = kind === "job_started"  ? "chat_notify_job_started"
+                 : kind === "job_finished" ? "chat_notify_job_finished"
+                 : kind === "job_reopened" ? "chat_notify_job_reopened"
+                 : kind === "job_closed"   ? "chat_notify_job_closed"
+                 : null;
+      if (!flag || s[flag] === false) return;
+      // Best-effort vehicle blurb so the feed reads naturally.
+      const mk = String((car && car.make) || "").trim();
+      const md = String((car && car.model) || "").trim();
+      const vehicle = [mk, md].filter(Boolean).join(" ");
+      const label = vehicle ? `${plate} (${vehicle})` : plate;
+      // Kind → (text, GarageChat.event kind). Keeping distinct wording per
+      // stage so the feed reads as a narrative when you scan through.
+      const map = {
+        job_started:  { text: `${label} checked in — job started.`,     evKind: "checkin" },
+        job_finished: { text: `${label} — work done, awaiting delivery.`, evKind: "done" },
+        job_reopened: { text: `${label} — reopened for rework.`,          evKind: "generic" },
+        job_closed:   { text: `${label} — closed & delivered.`,           evKind: "done" },
+      };
+      const m = map[kind];
+      if (m) window.GarageChat.event(m.text, m.evKind);
+    }
+
+    // Top-bar "at a glance" clock — DD.MM HH:MM. No year, no seconds:
+    // the mechanic just needs today's date and current minute while typing.
+    // Ticks every 15 s so we're never more than a quarter minute stale.
+    (function initQuickClock() {
+      const el = document.getElementById("quick-clock");
+      if (!el) return;
+      const paint = () => {
+        const d = new Date();
+        el.textContent = `${pad(d.getDate())}.${pad(d.getMonth() + 1)} `
+                       + `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      };
+      paint();
+      setInterval(paint, 15000);
+    })();
     function esc(s) {
       return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
-    // Parse "DD.MM.YYYY HH:MM" -> Date.
+    // Parse "DD.MM.YYYY HH:MM" or "DD.MM.YYYY HH:MM:SS" -> Date. Older
+    // saved jobs stored timestamps without seconds; both variants are
+    // accepted so the timeline keeps rendering correctly.
     function parseDT(s) {
-      const m = String(s || "").match(/(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/);
-      return m ? new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]) : null;
+      const m = String(s || "").match(/(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      return m ? new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)) : null;
     }
     // Total time = time out - time in, as "Xh Ym".
     function totalTime(dateIn, timeOut) {
@@ -327,20 +513,40 @@
       if (mins < 0) mins = 0;
       return `${Math.floor(mins / 60)}h ${mins % 60}m`;
     }
+    // "HHh MMm SSs" — used for the live-ticking Total time. Each unit is
+    // zero-padded to two characters so the digits don't jitter when they
+    // roll over (e.g. 9s → 10s), keeping the row visually stable.
+    function fmtHMS(secs) {
+      if (secs == null || isNaN(secs)) return "";
+      if (secs < 0) secs = 0;
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = secs % 60;
+      return `${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+    }
     // Sum of active intervals: start(=date_in)->pause, resume->pause, …, last->end.
-    function activeMinutes(dateIn, evs, endStr) {
+    function activeSeconds(dateIn, evs, endStr) {
       const start = parseDT(dateIn);
       if (!start) return null;
       const end = parseDT(endStr) || new Date();
       let total = 0, activeStart = start, active = true;
+      // work_done / closed act as implicit pauses — the time between mechanic
+      // finishing and the customer picking up isn't work. reopen acts as an
+      // implicit resume so continued work after a QC-return counts again.
+      const STOP  = new Set(["pause", "work_done", "closed"]);
+      const START = new Set(["resume", "reopen"]);
       for (const ev of (evs || [])) {
         const t = parseDT(ev.at);
         if (!t) continue;
-        if (ev.type === "pause" && active) { total += t - activeStart; active = false; }
-        else if (ev.type === "resume" && !active) { activeStart = t; active = true; }
+        if (STOP.has(ev.type) && active) { total += t - activeStart; active = false; }
+        else if (START.has(ev.type) && !active) { activeStart = t; active = true; }
       }
       if (active) total += end - activeStart;
-      return Math.round(total / 60000);
+      return Math.floor(total / 1000);
+    }
+    function activeMinutes(dateIn, evs, endStr) {
+      const s = activeSeconds(dateIn, evs, endStr);
+      return s == null ? null : Math.round(s / 60);
     }
     function toStr(v) {
       if (v == null) return "";
@@ -352,9 +558,12 @@
     let plate = sanitizePlate(params.get("plate") || "");
     let fileName = params.get("file") || null;
     let car = {};
-    let finished = false;
-    let status = "open";   // open | paused | finished
-    let events = [];        // [{type:"pause"|"resume", at:"DD.MM.YYYY HH:MM"}]
+    // status flow: open ⇄ paused → work_done ⇄ (reopen back to open) → closed.
+    // work_done: mechanic finished, doc still editable (QC / test drive).
+    // closed:    delivered to customer, doc locked from editing.
+    // Legacy "finished" from before the split is normalised to "closed" on load.
+    let status = "open";
+    let events = [];        // [{type:"pause"|"resume"|"work_done"|"reopen"|"closed", at:"DD.MM.YYYY HH:MM:SS"}]
     let savedWorkerId = ""; // assigned worker (job is a draft without one)
 
     const statusEl = document.getElementById("status");
@@ -387,12 +596,12 @@
     // ---------- editable rows ----------
     const ROWS = {
       work:  { body: "work-body",  fields: [
-        { cls: "desc", type: "text", list: "autofill-triggers" }, { cls: "wh", type: "number", min: 0 }, { cls: "wm", type: "number", min: 0, step: 15 },
+        { cls: "desc", type: "text", list: "autofill-triggers" },
       ]},
       parts: { body: "parts-body", fields: [
         { cls: "pu", type: "text" },
         { cls: "pn", type: "text", up: true },
-        { cls: "pq", type: "text" },
+        { cls: "pq", type: "number", step: "1", min: "0" },
         { cls: "pun", type: "text", list: "part-unit-suggestions" },
       ]},
       notes: { body: "notes-body", fields: [ { cls: "nt", type: "textarea" } ]},
@@ -400,11 +609,18 @@
 
     // Hide the remove button when only one row is left (keep its space so nothing jumps).
     function updateRemoveVis(bodyId) {
-      const rows = document.getElementById(bodyId).querySelectorAll(".trow");
-      const multi = rows.length > 1;
-      rows.forEach(r => {
+      const body = document.getElementById(bodyId);
+      if (!body) return;
+      // Hide × on rows whose main (first) field is empty. That trailing empty
+      // row is the "add slot" for auto-managed kinds — clicking × on it would
+      // just recreate itself. For non-auto kinds the same rule reads fine
+      // ("nothing to delete" on an empty row).
+      body.querySelectorAll(".trow").forEach(r => {
         const rm = r.querySelector(".rm");
-        if (rm) rm.style.visibility = multi ? "visible" : "hidden";
+        if (!rm) return;
+        const firstInput = r.querySelector("input, textarea");
+        const empty = !firstInput || !firstInput.value.trim();
+        rm.style.visibility = empty ? "hidden" : "visible";
       });
     }
 
@@ -440,48 +656,54 @@
           setTimeout(grow, 0); // fit height after a loaded value
         }
         if (idx === 0) inp.addEventListener("input", () => updateAddVis(kind));
-        // Minutes roll over: 45 + 15 = 60 -> minutes 0, +1 hour.
-        if (f.cls === "wm") inp.addEventListener("input", () => {
-          const m = parseInt(inp.value, 10);
-          if (isNaN(m) || m < 60) return;
-          const wh = row.querySelector(".wh");
-          if (wh) wh.value = (parseInt(wh.value, 10) || 0) + Math.floor(m / 60);
-          inp.value = m % 60;
-        });
         if (f.up) inp.addEventListener("input", () => {
           const p = inp.selectionStart; inp.value = inp.value.toUpperCase();
           try { inp.setSelectionRange(p, p); } catch (_) {}
         });
         row.appendChild(inp);
       });
-      // Some kinds (notes, work) auto-manage their own row count — no ×
-      // button, no + Add button. Typing into the last (empty) row appends a
-      // fresh row below, and clearing the key field of a non-last row
-      // collapses it on blur. For everything else we keep the regular × row
-      // control.
-      const AUTO_KINDS = new Set(["notes", "work"]);
-      if (!AUTO_KINDS.has(kind)) {
-        const rm = document.createElement("button");
-        rm.type = "button"; rm.className = "rm"; rm.textContent = "✕";
-        rm.addEventListener("click", () => {
-          row.remove();
-          if (!document.getElementById(def.body).children.length) addRow(kind, {});
-          updateRemoveVis(def.body);
-          updateAddVis(kind);
-        });
-        row.appendChild(rm);
-      } else {
+      // AUTO_KINDS auto-manage their own row count — no + Add button.
+      // Typing into the last empty row appends a fresh row below; clearing
+      // the key field of a non-last row collapses it on blur.
+      //
+      // REMOVABLE_KINDS additionally get an inline × button per row. Parts
+      // rows have multiple fields (part, number, qty, unit) and it's much
+      // faster to hit × than to clear every column just to drop a row that
+      // autofill added. Notes/work are single-field, so clearing the key
+      // works fine there — they stay ×-less.
+      const AUTO_KINDS = new Set(["notes", "work", "parts"]);
+      const REMOVABLE_KINDS = new Set(["parts"]);
+
+      if (AUTO_KINDS.has(kind)) {
         const keyInp = row.querySelector("." + def.fields[0].cls);
         if (keyInp) {
-          // Auto-grow: typing into the last empty key field appends a fresh row.
           keyInp.addEventListener("input", () => {
             const body = document.getElementById(def.body);
             const isLast = row === body.lastElementChild;
             if (isLast && keyInp.value.trim() !== "") addRow(kind, {});
           });
-          // On blur: collapse so there's always exactly one trailing empty.
           keyInp.addEventListener("change", () => normalizeAutoRows(kind));
         }
+      }
+
+      if (REMOVABLE_KINDS.has(kind)) {
+        const rm = document.createElement("button");
+        rm.type = "button"; rm.className = "rm"; rm.textContent = "✕";
+        rm.addEventListener("click", () => {
+          row.remove();
+          // Auto kinds always keep at least one trailing empty row so the
+          // user can start typing again without having to click anything.
+          if (AUTO_KINDS.has(kind)) {
+            normalizeAutoRows(kind);
+          } else if (!document.getElementById(def.body).children.length) {
+            addRow(kind, {});
+          }
+          updateRemoveVis(def.body);
+          updateAddVis(kind);
+          // Removing a row may drop the only oil part → digit needs to disappear.
+          if (kind === "parts") updateOilCardVisibility();
+        });
+        row.appendChild(rm);
       }
       document.getElementById(def.body).appendChild(row);
       updateRemoveVis(def.body);
@@ -508,6 +730,19 @@
 
     document.querySelectorAll("[data-add]").forEach(btn =>
       btn.addEventListener("click", () => addRow(btn.dataset.add, {})));
+
+    // Watch typing in any Parts-used description (`.pu`) so the giant oil
+    // capacity digit appears/disappears in real time as the user types
+    // "engine oil" or clears the field. Delegation covers rows added later.
+    document.getElementById("parts-body").addEventListener("input", (e) => {
+      const t = e.target;
+      if (t && t.classList && t.classList.contains("pu")) {
+        updateOilCardVisibility();
+        // The × on each row shows/hides based on whether the PART field is
+        // filled — keep it in sync as the user types.
+        updateRemoveVis("parts-body");
+      }
+    });
 
     // ---------- autofill rules (work → parts templates) ----------
     let autofillRules = [];
@@ -602,13 +837,7 @@
         const unit = String(p.unit || "").trim();
         if (appendPartRow(p.used || "", num, qty, unit, existing)) added++;
       });
-      if (added > 0) {
-        // Make sure there's a trailing empty row for the user to keep adding.
-        const last = document.querySelector("#parts-body .trow:last-child");
-        if (last && last.querySelector(".pu").value.trim()) {
-          addRow("parts", {});
-        }
-      }
+      if (added > 0) normalizeAutoRows("parts");
 
       // Remember that we already applied this trigger for this input so the
       // follow-up `change` event (or stray duplicate `input`) doesn't re-fire.
@@ -648,6 +877,42 @@
     // recommendation and append a parts row for each unique product code.
     // Then, if the rule has an "older than N years" extra and the car is
     // old enough, append one more row with the user's chosen oil.
+    // From an MPM archive's `engine.capacities[]`, return {value, unit} for
+    // the SMALLEST engine capacity (Service fill), not the first entry. MPM
+    // usually lists [Dry fill, Service fill, Filter capacity]; Dry fill is
+    // the "rebuild from empty" number and it's misleading for us — cars
+    // arrive already oiled and only need a top-up worth of Service fill.
+    // "Filter capacity" is skipped so its ~0.2 L doesn't accidentally win.
+    function pickServiceFillCap(capacities) {
+      if (!Array.isArray(capacities)) return null;
+      const engineCaps = capacities.filter(c => {
+        const t = String((c && c.type) || "").toLowerCase();
+        return t === "capacity" || t === "";
+      });
+      let best = null;
+      for (const c of engineCaps) {
+        const n = Number(String((c && c.value) || "").replace(",", "."));
+        if (!Number.isFinite(n) || n <= 0) continue;
+        if (best === null || n < best.value) best = { value: n, unit: (c && c.unit) || "" };
+      }
+      return best;
+    }
+
+    // Same source-of-truth as the Oil card: manual override on the car wins,
+    // otherwise the smallest engine capacity from the MPM archive.
+    function resolveOilQty(engine) {
+      if (car && car.oil_capacity != null && String(car.oil_capacity).trim() !== "") {
+        const n = Number(String(car.oil_capacity).replace(",", "."));
+        if (Number.isFinite(n) && n > 0) {
+          return { value: (Math.round(n * 10) / 10), unit: "L" };
+        }
+      }
+      const picked = pickServiceFillCap(engine && engine.capacities);
+      if (!picked) return null;
+      const unit = /^liters?$/i.test(String(picked.unit || "")) ? "L" : String(picked.unit || "");
+      return { value: picked.value, unit };
+    }
+
     async function appendOilsFromArchive(rule) {
       const existing = new Set(
         Array.from(document.querySelectorAll("#parts-body .trow .pu"))
@@ -676,13 +941,12 @@
           const comps = (doc.data && doc.data.type && doc.data.type.components) || [];
           const engine = comps.find(c => String(c.name || "").toLowerCase() === "engine");
           if (!engine) continue;
-          // Capacity (e.g. value "3.5", unit "liter") — used as the row's
-          // separate quantity and unit columns.
-          const cap = Array.isArray(engine.capacities) ? engine.capacities[0] : null;
-          const capValue = cap && cap.value ? String(cap.value) : "";
-          const capUnitRaw = cap && cap.unit ? String(cap.unit) : "";
-          // Normalise "liter"/"liters" → "L"; pass everything else through.
-          const capUnit = /^liters?$/i.test(capUnitRaw) ? "L" : capUnitRaw;
+          // Capacity — through the shared resolver so both this table and
+          // the Oil card use the same number: manual override on the car
+          // wins; otherwise smallest engine Capacity (Service fill).
+          const oilQty = resolveOilQty(engine);
+          const capValue = oilQty ? String(oilQty.value) : "";
+          const capUnit  = oilQty ? oilQty.unit : "";
           if (!firstQty && capValue) { firstQty = capValue; firstUnit = capUnit; }
           const recs = Array.isArray(engine.recommendations) ? engine.recommendations : [];
           for (const r of recs) {
@@ -725,11 +989,9 @@
             }
           }
         }
-        if (appended > 0) {
-          // Keep a trailing empty row.
-          const last = document.querySelector("#parts-body .trow:last-child");
-          if (last && last.querySelector(".pu").value.trim()) addRow("parts", {});
-        }
+        if (appended > 0) normalizeAutoRows("parts");
+        // Freshly appended oil rows must trigger the capacity-digit overlay.
+        if (typeof updateOilCardVisibility === "function") updateOilCardVisibility();
       } finally {
         if (typeof hideOverlay === "function") hideOverlay();
       }
@@ -806,14 +1068,24 @@
     const KM_PER_MI = 1.609344;
     const kmEl = document.getElementById("mileage-km");
     const miEl = document.getElementById("mileage-mi");
+    // Pale red highlight while either mileage field is empty — a nudge for
+    // the mechanic not to forget entering the reading.
+    function refreshMileageWarn() {
+      kmEl.classList.toggle("empty-warn", !kmEl.value.trim());
+      miEl.classList.toggle("empty-warn", !miEl.value.trim());
+    }
     kmEl.addEventListener("input", () => {
       const v = parseFloat(kmEl.value);
       miEl.value = isNaN(v) ? "" : (v / KM_PER_MI).toFixed(1);
+      refreshMileageWarn();
     });
     miEl.addEventListener("input", () => {
       const v = parseFloat(miEl.value);
       kmEl.value = isNaN(v) ? "" : (v * KM_PER_MI).toFixed(1);
+      refreshMileageWarn();
     });
+    // Initial paint — highlights kick in immediately for a fresh empty job.
+    refreshMileageWarn();
     document.getElementById("time-in").addEventListener("input", renderTimeline);
     document.getElementById("worker-select").addEventListener("change", updateDraftState);
 
@@ -822,7 +1094,7 @@
       const work = [...document.querySelectorAll("#work-body .trow")].map(r => {
         const description = r.querySelector(".desc").value.trim();
         if (!description) return null;
-        return { description, hours: r.querySelector(".wh").value.trim(), minutes: r.querySelector(".wm").value.trim() };
+        return { description };
       }).filter(Boolean);
       const parts = [...document.querySelectorAll("#parts-body .trow")].map(r => {
         const used = r.querySelector(".pu").value.trim();
@@ -848,7 +1120,9 @@
         time_out: document.getElementById("time-out").value.trim(),
         kilometrage: document.getElementById("mileage-km").value.trim(),
         mileage: document.getElementById("mileage-mi").value.trim(),
-        finished: finished,
+        // Legacy boolean kept in sync with status for older consumers
+        // (backend fallback, jobs-list filters written before the split).
+        finished: (status === "closed" || status === "finished"),
         status: status,
         events: events,
         worker_id: document.getElementById("worker-select").value,
@@ -903,10 +1177,14 @@
       document.getElementById("time-out").value = data.time_out || "";
       document.getElementById("mileage-km").value = data.kilometrage || "";
       document.getElementById("mileage-mi").value = data.mileage || "";
+      refreshMileageWarn();
       const wb = document.getElementById("work-body");  wb.innerHTML = "";
       (Array.isArray(data.work) ? data.work : []).forEach(w =>
-        addRow("work", { desc: w.description || "", wh: w.hours || "", wm: w.minutes || "" }));
-      if (!wb.children.length) addRow("work", {});
+        addRow("work", { desc: w.description || "" }));
+      // Auto-managed rows: guarantee exactly one empty trailing slot so the
+      // user can immediately start typing the next entry after loading a
+      // saved job (otherwise all rows are filled and there's nowhere to type).
+      normalizeAutoRows("work");
       const pb = document.getElementById("parts-body"); pb.innerHTML = "";
       // Load each saved part. Legacy jobs stored "quantity" as the combined
       // "4 L" string; in that case we split it into separate Quantity + Unit
@@ -922,10 +1200,15 @@
         if (/^liters?$/i.test(pun)) pun = "L";
         addRow("parts", { pu: p.used || "", pn: p.number || "", pq, pun });
       });
-      if (!pb.children.length) addRow("parts", {});
+      // Parts is auto-managed like work/notes now — guarantee one trailing
+      // empty slot so the user can start typing the next part immediately.
+      normalizeAutoRows("parts");
       const nb = document.getElementById("notes-body"); nb.innerHTML = "";
       (Array.isArray(data.notes) ? data.notes : []).forEach(n => addRow("notes", { nt: n.text || "" }));
-      if (!nb.children.length) addRow("notes", {});
+      normalizeAutoRows("notes");
+      // Programmatic value sets above don't fire `input` events, so ask the
+      // card to reconcile itself against the freshly loaded parts.
+      updateOilCardVisibility();
     }
 
     // ---------- save ----------
@@ -941,12 +1224,27 @@
         if (!res.ok) throw new Error(await res.text());
         const saved = await res.json();
         if (saved.file_name) {
+          // Distinguish "the draft just became a real file on disk" from
+          // "just an update to an already-saved job" — used below for the
+          // one-shot "Car taken in for work" chat event.
+          const wasFirstSave = !fileName;
           fileName = saved.file_name;
           const u = new URL(location); u.searchParams.set("file", fileName);
           history.replaceState({}, "", u);
           setJobNo(fileName);
+          // Draft just got a real filename on disk — the Delete button
+          // now has something to act on, so reveal it.
+          if (typeof refreshDeleteVis === "function") refreshDeleteVis();
+          if (wasFirstSave) fireChatEvent("job_started");
         }
-        setStatus(finished ? "Job finished." : "Saved.", "ok");
+        // Match the message to what just happened. status is already updated
+        // by the caller (work_done / close handlers) before saveJob is called.
+        const msg =
+          status === "closed"    ? "Job closed & delivered." :
+          status === "work_done" ? "Work done."              :
+          status === "paused"    ? "Paused."                 :
+          "Saved.";
+        setStatus(msg, "ok");
         renderUsedParts();
         setTimeout(() => setStatus(""), 1500);
         return true;
@@ -957,33 +1255,122 @@
     }
 
     // Timeline: Started (Time in) / Paused / Resumed / … / Finished (Time out).
+    // Force ":SS" on timestamps that were saved in the legacy "HH:MM" form
+    // (older events don't have seconds). New timestamps already have them.
+    // The pattern requires a preceding space so it matches the HH:MM in
+    // "DD.MM.YYYY HH:MM" and not the MM:SS tail of "HH:MM:SS" (which would
+    // otherwise get a bogus extra ":00" appended, giving "HH:MM:SS:00").
+    function withSeconds(s) {
+      const t = String(s || "").trim();
+      if (!t) return "";
+      return t.replace(/(\s\d{1,2}:\d{2})(?!:\d)/, "$1:00");
+    }
+
     function renderTimeline() {
       const el = document.getElementById("events-list");
       if (!el) return;
+      // Map event types to readable timeline labels. Same order as the
+      // events array so QC returns show up chronologically.
+      const LABELS = {
+        pause:     "Paused",
+        resume:    "Resumed",
+        work_done: "Work done",
+        reopen:    "Reopened",
+        closed:    "Closed",
+      };
       const rows = [["Started", document.getElementById("time-in").value.trim()]];
-      events.forEach(ev => rows.push([ev.type === "pause" ? "Paused" : "Resumed", ev.at]));
-      if (status === "finished") rows.push(["Finished", document.getElementById("time-out").value.trim()]);
+      events.forEach(ev => rows.push([LABELS[ev.type] || ev.type, ev.at]));
       el.innerHTML = rows.map(([k, v]) =>
-        `<div class="tl-row"><span class="tl-k">${k}</span><span class="tl-v">${esc(v) || "—"}</span></div>`
+        `<div class="tl-row"><span class="tl-k">${k}</span><span class="tl-v">${esc(withSeconds(v)) || "—"}</span></div>`
       ).join("");
+      refreshTotalTime();
+    }
+
+    // Compute and paint the "Total time" line under the timeline. When the
+    // job is Open we tick every second (see startTotalTick); when Paused or
+    // Finished the value is static (activeMinutes stops counting after the
+    // last pause / at time_out).
+    function refreshTotalTime() {
+      const totalEl = document.getElementById("tl-total");
+      if (!totalEl) return;
+      const dateIn = document.getElementById("time-in").value.trim();
+      // Once the mechanic marks Work done (or the job is Closed), the total
+      // freezes at time_out. For legacy "finished" records the same applies.
+      const endStr = (status === "work_done" || status === "closed" || status === "finished")
+        ? document.getElementById("time-out").value.trim()
+        : "";
+      const secs = activeSeconds(dateIn, events, endStr);
+      const text = (secs == null) ? "—" : fmtHMS(secs);
+      totalEl.classList.toggle("live", status === "open");
+      totalEl.innerHTML =
+        `<span class="tl-k">Total time</span><span class="tl-v">${esc(text)}</span>`;
+    }
+
+    // Live tick for the running job — 1 s cadence, only while Open.
+    let totalTickId = null;
+    function startTotalTick() {
+      if (totalTickId) return;
+      totalTickId = setInterval(refreshTotalTime, 1000);
+    }
+    function stopTotalTick() {
+      if (!totalTickId) return;
+      clearInterval(totalTickId);
+      totalTickId = null;
     }
 
     function updateStatusUI() {
-      const txt = status === "paused" ? "⏸ Paused"
-        : status === "finished" ? "✓ Finished" : "● Open";
-      const cls = "status-badge " + status;
+      // Label + colour badge.
+      const LABELS = {
+        open:      "● Open",
+        paused:    "⏸ Paused",
+        work_done: "✓ Work done",
+        closed:    "✓✓ Closed",
+        finished:  "✓✓ Closed", // legacy alias
+      };
+      const txt = LABELS[status] || "● Open";
+      // For badge class use the canonical name (finished → closed).
+      const cls = "status-badge " + (status === "finished" ? "closed" : status);
       const el = document.getElementById("status-badge-tl");
       if (el) { el.textContent = txt; el.className = cls; }
+
+      const isOpen     = (status === "open");
+      const isPaused   = (status === "paused");
+      const isWorkDone = (status === "work_done");
+      const isClosed   = (status === "closed" || status === "finished");
+
+      const show = (id, visible) => {
+        const b = document.getElementById(id);
+        if (b) b.style.display = visible ? "" : "none";
+      };
+
+      // Pause/Resume toggle — only meaningful while work is happening.
       const pb = document.getElementById("pause-btn");
-      if (status === "finished") { pb.style.display = "none"; }
-      else { pb.style.display = ""; pb.textContent = status === "paused" ? "Resume job" : "Pause job"; }
+      if (isOpen || isPaused) {
+        pb.style.display = "";
+        pb.textContent = isPaused ? "Resume job" : "Pause job";
+        pb.classList.toggle("paused", isPaused);
+      } else {
+        pb.style.display = "none";
+      }
+
+      // Save available whenever the doc is editable (i.e. not Closed).
+      show("save-btn",      !isClosed);
+      // Work done — mechanic-side finish. Only from Open / Paused.
+      show("work-done-btn", isOpen || isPaused);
+      // Reopen + Close & deliver — only from Work done.
+      show("reopen-btn",    isWorkDone);
+      show("close-btn",     isWorkDone);
+
+      // Live-tick only while Open.
+      if (isOpen) startTotalTick(); else stopTotalTick();
       renderTimeline();
     }
 
-    // Without an assigned worker the job is a draft: Save/Print/Pause/Finish are blocked.
+    // Without an assigned worker the job is a draft: Save/Print/Pause/Work
+    // done/Close all blocked (Reopen is safe — it just reverts state).
     function updateDraftState() {
       const ok = !!document.getElementById("worker-select").value;
-      ["save-btn", "print-btn", "pause-btn", "finish-btn"].forEach(id => {
+      ["save-btn", "print-btn", "pause-btn", "work-done-btn", "close-btn"].forEach(id => {
         const b = document.getElementById(id);
         if (b) b.disabled = !ok;
       });
@@ -1019,12 +1406,16 @@
       updateDraftState();
     }
 
-    // Lock the job from editing once it is finished.
+    // Lock the job from editing once it is Closed (delivered to customer).
+    // Work done alone does NOT call this — the doc stays editable so QC can
+    // still fix things or send it back to Open via Reopen.
     function lockUI() {
       document.querySelectorAll("#job input, #job textarea").forEach(i => { i.readOnly = true; });
       document.querySelectorAll("#job [data-add], #job .rm").forEach(b => { b.style.display = "none"; });
-      document.getElementById("save-btn").style.display = "none";
-      document.getElementById("finish-btn").style.display = "none";
+      ["save-btn", "work-done-btn", "reopen-btn", "close-btn"].forEach(id => {
+        const b = document.getElementById(id);
+        if (b) b.style.display = "none";
+      });
       document.getElementById("worker-select").disabled = true;
       updateStatusUI();
     }
@@ -1044,27 +1435,104 @@
       }
     });
 
-    document.getElementById("finish-btn").addEventListener("click", async () => {
-      if (!confirm("Finish this job? It will be locked from editing.")) return;
-      // If the job is currently paused, work physically stopped at that pause —
-      // anything after that (waiting for parts, customer cancelled, etc.) is
-      // dead time and shouldn't count toward the job duration. So we stamp
-      // Time out with the timestamp of the last pause event, not with "now".
-      // Otherwise (job is actively running) we use the current date & time.
-      let finishStamp = nowDateTime();
+    // ---------- Work done: mechanic-side finish ----------
+    // Stamps time_out but leaves the document editable. QC / test-drive step
+    // can still fix things, add notes, or Reopen the job back to Open.
+    document.getElementById("work-done-btn").addEventListener("click", async () => {
+      if (!confirm("Mark this job as Work done? Time out will be stamped. The document stays editable — click Close & deliver when the customer picks up.")) return;
+      // If paused, work physically stopped at the last pause — stamp Time out
+      // at that moment (dead time between pause and now shouldn't count).
+      let stamp = nowDateTime();
       if (status === "paused") {
         const lastPause = [...events].reverse().find(ev => ev.type === "pause");
-        if (lastPause && lastPause.at) finishStamp = lastPause.at;
+        if (lastPause && lastPause.at) stamp = lastPause.at;
       }
-      document.getElementById("time-out").value = finishStamp;
-      finished = true;
-      status = "finished";
+      const prevStatus  = status;
+      const prevTimeOut = document.getElementById("time-out").value;
+      document.getElementById("time-out").value = stamp;
+      events.push({ type: "work_done", at: stamp });
+      status = "work_done";
+      updateStatusUI();
       const ok = await saveJob();
-      if (ok) lockUI();
-      else { // revert on failure
-        finished = false;
-        status = events.length && events[events.length - 1].type === "pause" ? "paused" : "open";
+      if (ok) {
+        fireChatEvent("job_finished");
+      } else { // revert on failure
+        events.pop();
+        document.getElementById("time-out").value = prevTimeOut;
+        status = prevStatus;
         updateStatusUI();
+      }
+    });
+
+    // ---------- Reopen: QC returned it for rework ----------
+    document.getElementById("reopen-btn").addEventListener("click", async () => {
+      if (!confirm("Return this job to active work? The Work-done stamp will be replaced when the mechanic finishes again.")) return;
+      const prevTimeOut = document.getElementById("time-out").value;
+      const stamp = nowDateTime();
+      events.push({ type: "reopen", at: stamp });
+      // Clear time_out — a fresh Work done click will stamp a new one.
+      document.getElementById("time-out").value = "";
+      status = "open";
+      updateStatusUI();
+      const ok = await saveJob();
+      if (ok) {
+        fireChatEvent("job_reopened");
+      } else { // revert on failure
+        events.pop();
+        document.getElementById("time-out").value = prevTimeOut;
+        status = "work_done";
+        updateStatusUI();
+      }
+    });
+
+    // ---------- Close & deliver: final, locks the document ----------
+    document.getElementById("close-btn").addEventListener("click", async () => {
+      if (!confirm("Close and deliver this job? The document will be locked from further editing. This cannot be undone.")) return;
+      const stamp = nowDateTime();
+      events.push({ type: "closed", at: stamp });
+      status = "closed";
+      const ok = await saveJob();
+      if (ok) {
+        // Await here — fireChatEvent may still be fetching settings on the
+        // first call of the session; if we redirect first, that fetch gets
+        // aborted and the event never posts.
+        await fireChatEvent("job_closed");
+        lockUI();
+        // Same convention as before — after final close, send the user to
+        // the global jobs list.
+        window.location.href = "/jobs.html";
+      } else { // revert
+        events.pop();
+        status = "work_done";
+        updateStatusUI();
+      }
+    });
+
+    // ---------- delete job (bottom-of-page danger zone) ----------
+    // The button is hidden until we know a saved file exists on disk —
+    // there's nothing to delete for a fresh draft that was never saved.
+    const deleteJobBtn = document.getElementById("delete-job-btn");
+    function refreshDeleteVis() {
+      if (!deleteJobBtn) return;
+      deleteJobBtn.style.display = fileName ? "" : "none";
+    }
+    refreshDeleteVis();
+    deleteJobBtn.addEventListener("click", async () => {
+      if (!fileName) return; // safety — shouldn't happen since button is hidden
+      if (!confirm("Delete this job permanently? This cannot be undone.")) return;
+      showOverlay("Deleting…");
+      try {
+        const res = await fetch(
+          `/api/cars/${encodeURIComponent(plate)}/jobs/${encodeURIComponent(fileName)}`,
+          { method: "DELETE" }
+        );
+        if (!res.ok) throw new Error(await res.text());
+        // Back to the car page so the user sees what jobs remain in context.
+        window.location.href = `/car.html?plate=${encodeURIComponent(plate)}`;
+      } catch (e) {
+        setStatus("Delete failed: " + e.message, "err");
+      } finally {
+        hideOverlay();
       }
     });
 
@@ -1072,12 +1540,19 @@
     document.getElementById("print-btn").addEventListener("click", () => {
       const d = collect();
       const jobId = fileName ? fileName.replace(/\.json$/i, "") : plate; // e.g. "11C16861_3"
-      const statusLabel = status === "finished" ? "FINISHED" : status === "paused" ? "PAUSED" : "OPEN";
-      const endStr = status === "finished" ? d.time_out : "";
+      const isClosed = (status === "closed" || status === "finished");
+      const statusLabel =
+        isClosed              ? "CLOSED"    :
+        status === "work_done" ? "WORK DONE" :
+        status === "paused"    ? "PAUSED"    : "OPEN";
+      const endStr = (isClosed || status === "work_done") ? d.time_out : "";
       const total = fmtMins(activeMinutes(d.date_in, events, endStr));
+      const EV_LABELS = {
+        pause: "Paused", resume: "Resumed",
+        work_done: "Work done", reopen: "Reopened", closed: "Closed",
+      };
       const logRows = [["Started", d.date_in]]
-        .concat(events.map(ev => [ev.type === "pause" ? "Paused" : "Resumed", ev.at]));
-      if (status === "finished") logRows.push(["Finished", d.time_out]);
+        .concat(events.map(ev => [EV_LABELS[ev.type] || ev.type, ev.at]));
       const logHtml = logRows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v) || "—"}</td></tr>`).join("");
       // Empty tables (and their headings) are omitted from the printout.
       const workSection = d.work.length ? `
@@ -1087,37 +1562,69 @@
         }</tbody></table>` : "";
       const partsSection = d.parts.length ? `
         <h3>Parts used</h3>
-        <table><thead><tr><th style="width:4ch;">#</th><th>Part</th><th style="width:16ch;">Number</th><th style="width:7ch;">Qty</th><th style="width:6ch;">Unit</th></tr></thead><tbody>${
-          d.parts.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.used)}</td><td>${esc(p.number)}</td><td>${esc(p.quantity)}</td><td>${esc(p.unit)}</td></tr>`).join("")
+        <table><thead><tr>
+          <th style="width:4ch;text-align:center;">#</th>
+          <th>Part</th>
+          <th style="width:22ch;text-align:center;">Number</th>
+          <th style="width:7ch;text-align:center;">Qty</th>
+          <th style="width:6ch;text-align:center;">Unit</th>
+        </tr></thead><tbody>${
+          // Everything except the Part description column is centred so short
+          // codes like "5W-30" / "pcs" don't hug the left border of the cell.
+          d.parts.map((p, i) => `<tr>
+            <td style="text-align:center;">${i + 1}</td>
+            <td>${esc(p.used)}</td>
+            <td style="text-align:center;">${esc(p.number)}</td>
+            <td style="text-align:center;">${esc(p.quantity)}</td>
+            <td style="text-align:center;">${esc(p.unit)}</td>
+          </tr>`).join("")
         }</tbody></table>` : "";
       const notesSection = d.notes.length ? `
         <h3>Notes</h3>
         <table><thead><tr><th style="width:4ch;">#</th><th>Note</th></tr></thead><tbody>${
           d.notes.map((n, i) => `<tr><td>${i + 1}</td><td>${esc(n.text)}</td></tr>`).join("")
         }</tbody></table>` : "";
+      // Worker who did the job — take the selected option's text, since
+      // that's the name shown in the dropdown (fallback to the currently
+      // signed-in worker for older jobs without a worker_id).
+      const workerSel = document.getElementById("worker-select");
+      let workerName = "";
+      if (workerSel && workerSel.selectedIndex >= 0 && workerSel.value) {
+        workerName = workerSel.options[workerSel.selectedIndex].textContent.trim();
+      }
+      if (!workerName && typeof window.currentWorker === "function") {
+        const w = window.currentWorker();
+        if (w) workerName = `${w.first_name || ""} ${w.last_name || ""}`.trim();
+      }
+
       document.getElementById("print-area").innerHTML = `
         <h1>Cleere Auto Services — Work Order</h1>
         <div class="sub" style="font-size:1.15rem;"><b>${esc(jobId)}</b> · ${esc(d.vehicle.make)} ${esc(d.vehicle.model)}</div>
         <div class="kv">
           <div><b>Customer:</b> ${esc(toStr(car.customer_name)) || "—"}</div>
           <div><b>Phone:</b> ${esc(toStr(car.customer_phone)) || "—"}</div>
-          <div><b>Time in:</b> ${esc(d.date_in) || "—"}</div>
-          <div><b>Time out:</b> ${esc(d.time_out) || "—"}</div>
           <div><b>Mileage:</b> ${esc(d.kilometrage) || "—"} km / ${esc(d.mileage) || "—"} mi</div>
         </div>
+        <!-- Time in / Time out removed on purpose — the same timestamps
+             live in the Time log table below (Started / … / Closed) and
+             duplicating them at the top just clutters the sheet. -->
+
         ${workSection}
         ${partsSection}
         ${notesSection}
         <table><thead><tr><th>Time log</th><th style="text-align:right;">${statusLabel}</th></tr></thead><tbody>${logHtml}</tbody></table>
-        <div class="kv" style="margin-top:8px;"><div><b>Total time (active):</b> ${total || "—"}</div></div>
+        <div class="kv" style="margin-top:8px;">
+          <div>Total time: <b>${total || "—"}</b></div>
+          <div>Work completed by: <b>${esc(workerName) || "—"}</b></div>
+        </div>
       `;
       window.print();
     });
 
     // ---------- previously used parts ----------
     // Lookup map: normalized part name (lowercase, trimmed) -> last-used number.
-    // Populated only from FINISHED jobs (status === "finished"), newest-first.
-    // Used by maybeAutofillFromDesc to pre-fill the number column.
+    // Populated from committed jobs (work_done / closed / legacy finished),
+    // newest-first. Used by maybeAutofillFromDesc to pre-fill the number column.
     window.usedPartsIndex = new Map();
     async function renderUsedParts() {
       const el = document.getElementById("used-parts");
@@ -1132,7 +1639,10 @@
         for (const it of items) {
           const r = await fetch(`/api/cars/${encodeURIComponent(plate)}/jobs/${encodeURIComponent(it.name)}`);
           const doc = await r.json();
-          if (doc.status !== "finished") continue;  // only completed jobs count
+          // Any status past "work_done" means the mechanic has committed to
+          // the part numbers used — safe to pull them into autofill history.
+          // Legacy "finished" is treated as "closed" for backward compat.
+          if (!["work_done", "closed", "finished"].includes(doc.status)) continue;
           (Array.isArray(doc.parts) ? doc.parts : []).forEach(p => {
             const used = String(p.used || "").trim();
             const num = String(p.number || "").trim();
@@ -1191,14 +1701,137 @@
           if (!power && /\d\s*HP/i.test(t)) power = t;
         });
         const eng = extractEngineName(html);
-        const lit = extractEngineOilLitres(html);
         const engName = eng ? (eng.replace(/^engine\s+/i, "") || eng) : "";
-        const str = [engName, power, (lit ? `${lit} L` : "")].filter(Boolean).join(" · ");
+        // Oil capacity is already shown in the big oil card above Job details —
+        // don't duplicate it here in the Engine strip.
+        const str = [engName, power].filter(Boolean).join(" · ");
         if (str) {
           document.getElementById("v-engine").textContent = str;
           document.getElementById("v-engine-wrap").style.display = "";
         }
       } catch (_) {}
+    }
+
+    // Set up the car card:
+    //   • Photo is the primary content — always shown as background when the
+    //     car has one on file.
+    //   • Oil capacity digits (the giant "4.7") sit on top of the photo, but
+    //     only when this job is actually servicing engine oil (an oil part
+    //     appears in Parts used). See updateOilCardVisibility() below.
+    // We always try to fetch the capacity from the MPM archive so it's ready
+    // the moment the user types an oil part.
+    async function populateOilCard() {
+      const cardEl   = document.getElementById("oil-card");
+      const capValEl = document.getElementById("oil-cap-val");
+      const gradesEl = document.getElementById("oil-grades");
+      if (!cardEl) return;
+
+      // 1. Background photo — unconditional. Set it (or clear it) before we
+      //    kick off the async capacity lookup so the photo doesn't wait.
+      if (car && car.photo) {
+        const v = car.photo_updated_ms || 0;
+        cardEl.style.backgroundImage =
+          `url("/api/cars/${encodeURIComponent(plate)}/photo?v=${v}")`;
+        cardEl.classList.add("has-photo");
+      } else {
+        cardEl.style.backgroundImage = "";
+        cardEl.classList.remove("has-photo");
+      }
+
+      // 2. Try to grab the engine oil capacity for the overlay digit. Silent
+      //    on failure — the card still shows the photo, we just won't have a
+      //    number to overlay if the user adds an oil part later.
+      try {
+        const res = await fetch(`/api/cars/${encodeURIComponent(plate)}/oil`);
+        if (res.ok) {
+          const data = await res.json();
+          const first = (data.items || []).find(o =>
+            o.name && !o.name.startsWith("_") && o.name.endsWith(".json")
+          );
+          if (first) {
+            const doc = await fetch(`/api/cars/${encodeURIComponent(plate)}/oil/${encodeURIComponent(first.name)}`)
+              .then(r => r.ok ? r.json() : null);
+            if (doc) {
+              const comps = (doc.data && doc.data.type && doc.data.type.components) || [];
+              const engine = comps.find(c => String(c.name || "").toLowerCase() === "engine");
+              if (engine) {
+                // Capacity — pick the SMALLEST engine Capacity (Service fill),
+                // never Dry fill or Filter capacity. Same rule the Parts-used
+                // autofill uses via pickServiceFillCap(), so the big digit
+                // over the photo and the L value in the parts row always
+                // agree. Rendered at 1 decimal, truncated rather than
+                // rounded so we don't hide a shortfall.
+                const picked = pickServiceFillCap(engine.capacities);
+                if (picked && Number.isFinite(picked.value)) {
+                  capValEl.textContent =
+                    (Math.trunc(picked.value * 10) / 10).toFixed(1);
+                }
+                // Oil grades — dedupe by "viscosity + spec". Written to the
+                // hidden .oil-grades slot; unused visually right now but kept
+                // for potential later use / debugging.
+                const seen = new Set();
+                const chips = [];
+                (engine.recommendations || []).forEach(r => {
+                  const usage = String(r.vehicle_usage || "").trim().toLowerCase();
+                  if (usage === "severe") return;
+                  const name = String(r.product_name || "").trim();
+                  const visMatch = name.match(/\b\d{1,2}W-\d{1,2}\b/i);
+                  const vis  = visMatch ? visMatch[0] : "";
+                  const spec = extractOilSpec(name);
+                  const label = [vis, spec].filter(Boolean).join(" ") || (r.product_code || "").trim();
+                  if (!label || seen.has(label.toLowerCase())) return;
+                  seen.add(label.toLowerCase());
+                  chips.push(`<span class="oil-grade">${label.replace(/</g, "&lt;")}</span>`);
+                });
+                gradesEl.innerHTML = chips.join("");
+              }
+            }
+          }
+        }
+      } catch (_) { /* silent — see comment above */ }
+
+      // 3. Manual override — wins over MPMoil. Enables the oil-card digit for
+      //    cars MPMoil doesn't know (JDM imports, rare trims) as soon as the
+      //    user fills Oil capacity on the car edit page. Also lets the user
+      //    fix a wrong MPMoil value without touching the archive.
+      if (car && car.oil_capacity != null && String(car.oil_capacity).trim() !== "") {
+        const n = Number(String(car.oil_capacity).replace(",", "."));
+        if (Number.isFinite(n) && n > 0) {
+          capValEl.textContent = (Math.trunc(n * 10) / 10).toFixed(1);
+        }
+      }
+
+      // 4. Reconcile card + digit visibility.
+      updateOilCardVisibility();
+    }
+
+    // True when at least one Parts-used row names an engine oil. We accept
+    // either the literal word "oil" or a viscosity code like "5W-30" / "0w20"
+    // so both free-typed entries ("engine oil") and autofilled product names
+    // ("5W-30 Diamond LFE") are recognised.
+    function hasOilPartRow() {
+      const OIL_RE = /\b(oil|\d{1,2}\s*w\s*-?\s*\d{1,2})\b/i;
+      const pus = document.querySelectorAll("#parts-body .trow .pu");
+      for (const inp of pus) {
+        if (OIL_RE.test(String(inp.value || ""))) return true;
+      }
+      return false;
+    }
+
+    // Decide whether the oil card is shown at all, and whether the giant
+    // capacity digit is overlaid on top of the photo.
+    //   card visible = (car has photo) OR (capacity known AND oil in parts)
+    //   digit visible = (capacity known AND oil in parts)
+    function updateOilCardVisibility() {
+      const cardEl = document.getElementById("oil-card");
+      const capValEl = document.getElementById("oil-cap-val");
+      if (!cardEl || !capValEl) return;
+      const hasPhoto = cardEl.classList.contains("has-photo");
+      const hasCap = String(capValEl.textContent || "").trim() !== "";
+      const oilInParts = hasOilPartRow();
+      const showCap = hasCap && oilInParts;
+      cardEl.classList.toggle("show-cap", showCap);
+      cardEl.style.display = (hasPhoto || showCap) ? "" : "none";
     }
 
     async function loadCar() {
@@ -1209,6 +1842,7 @@
       fillVehicle();
       renderGoogle();
       loadEngine();
+      populateOilCard();
       renderUsedParts();
     }
 
@@ -1228,10 +1862,14 @@
           const data = await res.json();
           fillJob(data);
           events = Array.isArray(data.events) ? data.events : [];
-          status = data.status || (data.finished ? "finished" : "open");
-          finished = status === "finished";
+          // Normalise legacy "finished" → "closed" (jobs saved before the
+          // Work done / Close split). Files without status fall back to the
+          // legacy boolean.
+          let s = data.status || (data.finished ? "finished" : "open");
+          if (s === "finished") s = "closed";
+          status = s;
           savedWorkerId = data.worker_id || "";
-          if (finished) lockUI(); else updateStatusUI();
+          if (status === "closed") lockUI(); else updateStatusUI();
         } catch (e) { setStatus("Error loading job: " + e.message, "err"); fillJob({}); }
       } else {
         fillJob({}); // new job: now() + one empty row each

@@ -60,7 +60,7 @@
     .card h2 { margin: 0 0 10px; font-size: 1rem; color: #555; }
     .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
     .field label { font-size: 12px; color: #555; }
-    input[type="text"], input[type="tel"], textarea, select {
+    input[type="text"], input[type="tel"], input[type="number"], textarea, select {
       font-family: inherit; padding: 6px 8px; border: 1px solid #bbb;
       border-radius: 4px; font-size: 14px; width: 100%;
     }
@@ -84,6 +84,22 @@
     .item a { color: #3275ac; text-decoration: none; }
     .item a:hover { text-decoration: underline; }
     .item button { padding: 4px 8px; font-size: 12px; }
+    /* Status glyph rendered as its OWN block, left of the date/description
+       column, so both text lines line up cleanly to the right of the badge
+       (instead of the description wrapping under it). Colours mirror the
+       global jobs list on /jobs.html so a mechanic sees the same code
+       everywhere: ● Open (blue) · ⏸ Paused (orange) · ✓ Work done (yellow)
+       · ✓ Closed (green). */
+    .item .st {
+      flex: 0 0 auto;
+      font-weight: 900; font-size: 1.9em; line-height: 1;
+      min-width: 28px; text-align: center;
+      align-self: center;
+    }
+    .item .st-op  { color: #3275ac; }
+    .item .st-pau { color: #c80;    }
+    .item .st-wd  { color: #b58c00; }
+    .item .st-fin { color: #2a7;    }
 
     .muted { color: #666; font-size: 12px; }
     .status { font-size: 13px; color: #555; margin: 6px 0; }
@@ -199,19 +215,35 @@
       </div>
       <div class="field">
         <label>Make</label>
-        <input type="text" id="make" readonly />
+        <!-- Editable so JDM / grey imports and other MPMoil-unknown cars can
+             have their marque typed in by hand. Auto-populated from MPMoil
+             when the API knows the plate. -->
+        <input type="text" id="make" />
       </div>
       <div class="field">
         <label>Model</label>
-        <input type="text" id="model" readonly />
+        <input type="text" id="model" />
       </div>
       <div class="field">
         <label>Years</label>
-        <input type="text" id="years" readonly />
+        <input type="text" id="years" placeholder="e.g. 2017 or 2014-2019" />
       </div>
       <div class="field">
         <label>Engine (oil)</label>
-        <input type="text" id="engine" readonly />
+        <input type="text" id="engine" placeholder="e.g. P3-VPS 1.3 SKYACTIV-G · 92HP · 3.8 L" />
+      </div>
+      <!-- Manual overrides for the job page's big oil card. Filled from
+           MPMoil when it knows the car; typed in by hand otherwise. The
+           values here take precedence over anything the MPMoil archive
+           returns, so a hand-typed value always wins. -->
+      <div class="field">
+        <label>Oil capacity (L)</label>
+        <input type="number" id="oil_capacity" min="0" step="0.1"
+               placeholder="e.g. 3.8" />
+      </div>
+      <div class="field">
+        <label>Oil viscosity</label>
+        <input type="text" id="oil_viscosity" placeholder="e.g. 0W-20" />
       </div>
       <div class="field">
         <label>Fuel type</label>
@@ -240,10 +272,6 @@
         <label>Customer phone</label>
         <input type="tel" id="customer_phone" />
       </div>
-      <div class="field">
-        <label>Notes</label>
-        <textarea id="notes"></textarea>
-      </div>
       <div class="row-btns">
         <button id="save-car" style="display:none;">Save</button>
         <button class="danger" id="delete-car">Delete car</button>
@@ -261,6 +289,16 @@
           <button id="new-job">+ New Job</button>
         </div>
         <div class="list" id="jobs-list"></div>
+      </div>
+
+      <!-- Free-form notes about the car — moved out of the left Vehicle Info
+           card so it can breathe. Sits between Jobs and Oil archive so it's
+           visible when reviewing history but doesn't crowd the fixed
+           vehicle fields on the left. Textarea id / EDITABLE hookup /
+           save-payload are untouched — only the DOM position moved. -->
+      <div class="card">
+        <h2>Notes</h2>
+        <textarea id="notes" style="width:100%; min-height:100px; resize:vertical;"></textarea>
       </div>
 
       <div class="card">
@@ -422,13 +460,25 @@
           if (!power && /\d\s*HP/i.test(t)) power = t; // e.g. "136HP, 100KW, 4200RPM"
         });
         const engName = eng ? (eng.replace(/^engine\s+/i, "") || eng) : "";
-        engEl.value = [engName, power, (lit ? `${lit} L` : "")].filter(Boolean).join(" · ");
+        // Only fill the Engine field from MPMoil when the user hasn't typed
+        // their own value — otherwise a hand-typed "P3-VPS 1.3 SKYACTIV-G"
+        // would silently get replaced with whatever MPMoil returns.
+        if (!engEl.value.trim()) {
+          engEl.value = [engName, power, (lit ? `${lit} L` : "")].filter(Boolean).join(" · ");
+        }
         renderFluids(parseFluids(doc));
       } catch (_) { renderFluids([]); }
     }
 
     // --- Vehicle Info: show Save only when an editable field changed ---
-    const EDITABLE = ["customer_name", "customer_phone", "notes", "vin", "pin", "fuel_type"];
+    const EDITABLE = [
+      "customer_name", "customer_phone", "notes", "vin", "pin", "fuel_type",
+      // Editable so JDM imports and other MPMoil-unknown cars can be filled
+      // in by hand. When MPMoil knows the plate these are auto-populated on
+      // create; the user is free to override them afterwards.
+      "make", "model", "years", "engine",
+      "oil_capacity", "oil_viscosity",
+    ];
     let baseline = {};
     let carData = {}; // full car.json, so Save preserves mpmoil/photo fields
     function checkDirty() {
@@ -489,14 +539,24 @@
         carData = data;
         document.getElementById("reg_no").value = toStr(data.reg_no) || plate;
         document.getElementById("make").value = toStr(data.make);
+        // Model: prefer the user-saved value; only fall back to the MPMoil
+        // variant name if nothing has been typed on the record yet. This
+        // keeps hand edits from being overwritten by the MPMoil auto-guess.
         document.getElementById("model").value =
-          toStr(data.mpmoil_variant && data.mpmoil_variant.name) || toStr(data.model);
+          toStr(data.model) || toStr(data.mpmoil_variant && data.mpmoil_variant.name);
         document.getElementById("customer_name").value = toStr(data.customer_name);
         document.getElementById("customer_phone").value = toStr(data.customer_phone);
         document.getElementById("notes").value = toStr(data.notes);
         document.getElementById("vin").value = toStr(data.vin);
         document.getElementById("pin").value = toStr(data.pin) || toStr(data.pin_code);
-        document.getElementById("years").value = toStr(data.mpmoil_years) || yearsFromVariant(data.mpmoil_variant);
+        document.getElementById("years").value = toStr(data.years) || toStr(data.mpmoil_years) || yearsFromVariant(data.mpmoil_variant);
+        // Pre-fill Engine + oil overrides from saved values. loadVariantOilDetails
+        // below only writes to the Engine field when it's empty, so a hand-typed
+        // value survives an MPMoil round-trip.
+        document.getElementById("engine").value = toStr(data.engine);
+        document.getElementById("oil_capacity").value =
+          data.oil_capacity != null && data.oil_capacity !== "" ? String(data.oil_capacity) : "";
+        document.getElementById("oil_viscosity").value = toStr(data.oil_viscosity);
         // Fuel type select + big header badge. Legacy "hybrid" is mapped to
         // "petrol-electric" so the select shows the correct option even if
         // the backend migration hasn't touched this file yet.
@@ -552,27 +612,38 @@
           list.innerHTML = `<div class="muted">No jobs yet.</div>`;
           return;
         }
+        // Same status → glyph mapping the global jobs list uses. Legacy
+        // "finished" and the new "closed" both render as the green check.
+        const statusBadge = (s) => {
+          switch (String(s || "").toLowerCase()) {
+            case "closed":
+            case "finished": return `<span class="st st-fin" title="Closed">✓✓</span>`;
+            case "work_done":return `<span class="st st-wd"  title="Work done — awaiting delivery">✓</span>`;
+            case "paused":   return `<span class="st st-pau" title="Paused">⏸</span>`;
+            case "open":     return `<span class="st st-op"  title="Open">●</span>`;
+            default:         return "";
+          }
+        };
         items.forEach(j => {
           const div = document.createElement("div");
           div.className = "item";
           const date = j.date_in || new Date(j.saved_ms).toLocaleString();
           const timeRange = (j.time_in || j.time_out)
             ? ` &middot; ${j.time_in || "?"}–${j.time_out || "?"}` : "";
+          // Delete moved into the job editor itself — a bottom-of-page button
+          // there, so it's harder to hit by accident from the jobs list.
+          // Badge sits OUTSIDE .name so it's a real sibling flex-item — that
+          // makes both the date link and the work-summary line up neatly to
+          // the right of it, instead of the description wrapping under it.
           div.innerHTML = `
+            ${statusBadge(j.status)}
             <div class="name">
               <a href="/job.html?plate=${encodeURIComponent(plate)}&file=${encodeURIComponent(j.name)}">
                 ${date}${timeRange}
               </a>
               ${j.work_summary ? `<div class="muted" style="white-space:normal;">${j.work_summary}</div>` : ""}
             </div>
-            <button class="danger" data-name="${j.name}">Del</button>
           `;
-          div.querySelector("button").addEventListener("click", async (ev) => {
-            ev.stopPropagation();
-            if (!confirm("Delete this job?")) return;
-            await fetch(`/api/cars/${encodeURIComponent(plate)}/jobs/${encodeURIComponent(j.name)}`, { method: "DELETE" });
-            loadJobs();
-          });
           list.appendChild(div);
         });
       } catch (e) {
@@ -623,6 +694,10 @@
       carStatus.textContent = "Saving...";
       carStatus.className = "status";
       // Merge edits into the loaded car so mpmoil/photo/variant fields are preserved.
+      // Number fields (oil_capacity) are parsed to Number so the backend
+      // stores 3.8 not "3.8"; empty string → null so blank means "no override".
+      const capRaw = document.getElementById("oil_capacity").value.trim();
+      const capNum = capRaw === "" ? null : Number(capRaw.replace(",", "."));
       const body = Object.assign({}, carData, {
         plate,
         customer_name: document.getElementById("customer_name").value.trim(),
@@ -631,6 +706,12 @@
         vin: document.getElementById("vin").value.trim(),
         pin: document.getElementById("pin").value.trim(),
         fuel_type: document.getElementById("fuel_type").value,
+        make: document.getElementById("make").value.trim(),
+        model: document.getElementById("model").value.trim(),
+        years: document.getElementById("years").value.trim(),
+        engine: document.getElementById("engine").value.trim(),
+        oil_capacity: Number.isFinite(capNum) ? capNum : null,
+        oil_viscosity: document.getElementById("oil_viscosity").value.trim(),
       });
       showOverlay("Saving…");
       try {

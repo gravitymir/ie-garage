@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Division - Store - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 20px; margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 14px; font-size: 1.1rem; color: #3275ac; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+    .field label {
+      font-size: 12px; color: #555;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .field input, .field textarea {
+      font-family: inherit; font-size: 14px;
+      padding: 8px 10px; border: 1px solid #bbb; border-radius: 4px;
+    }
+    .actions { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    button {
+      font-family: inherit; padding: 10px 18px;
+      border: 1px solid #3275ac; border-radius: 4px;
+      cursor: pointer; font-size: 14px;
+    }
+    button.primary { background: #3275ac; color: #fff; }
+    button.primary:hover { opacity: 0.9; }
+    button.secondary { background: #fff; color: #3275ac; }
+    button.secondary:hover { background: #eaf2f8; }
+    button.danger {
+      background: #d64545; border-color: #d64545; color: #fff; font-weight: 700;
+    }
+    button.danger:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Layout — Photo + Info stacked in a single narrow left column, exactly
+       like car.html. The right column is left empty for now; reserved for
+       future content (items in this division, stats, etc.) without needing
+       another layout refactor. Collapses to one column below 800px. */
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 360px) 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .layout .left-col {
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    /* Photo card + lightbox — same interaction as car.html:
+       • Click the placeholder → file picker opens.
+       • Click the photo       → fullscreen lightbox with Upload/Delete buttons.
+       • Click lightbox again  → closes back to normal.
+       • Esc                   → closes lightbox. */
+    .photo-wrap {
+      margin-bottom: 10px;
+      background: #fafafa;
+      border: 1px dashed #ccc;
+      border-radius: 6px;
+      min-height: 140px;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    .photo-wrap img {
+      max-width: 100%;
+      max-height: 260px;
+      display: block;
+      border-radius: 4px;
+      cursor: zoom-in;
+    }
+    .photo-wrap .empty {
+      color: #888; font-size: 13px;
+      padding: 20px;
+      cursor: pointer;
+      text-align: center;
+      width: 100%;
+      transition: color 0.15s, background 0.15s;
+    }
+    .photo-wrap .empty:hover { color: #3275ac; background: #f0f6fb; }
+
+    .lightbox {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 9000;
+      display: none;
+      align-items: center; justify-content: center;
+      padding: 24px;
+      cursor: zoom-out;
+    }
+    .lightbox.open { display: flex; }
+    .lightbox img {
+      max-width: 100%; max-height: 100%;
+      border-radius: 4px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      cursor: zoom-out;
+    }
+    .lightbox-actions {
+      position: absolute; bottom: 24px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 10px; z-index: 1;
+      flex-wrap: wrap; justify-content: center;
+    }
+    input[type=file] { display: none; }
+
+    .toast {
+      padding: 10px 14px; border-radius: 6px;
+      margin-bottom: 12px; font-size: 13px;
+    }
+    .toast.ok  { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+    .toast.err { background: #fbe6e6; color: #8b1a1a; border: 1px solid #c0392b; }
+
+    .stat-row {
+      display: flex; gap: 12px; flex-wrap: wrap;
+      color: #666; font-size: 13px; margin-bottom: 8px;
+    }
+    .stat-row .k { color: #999; text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; }
+    .stat-row .v { color: #111; font-weight: 700; margin-left: 4px; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/store.html">&larr; Store</a>
+    <a class="home" href="/store-divisions.html">&larr; All Divisions</a>
+    <h1 id="title">Division</h1>
+  </div>
+
+  <div id="toast-holder"></div>
+  <div id="content" style="display:none;">
+
+    <!-- Photo + Info stacked in a single narrow left column (matches car.html).
+         Right column is empty for now — reserved for future content. -->
+    <div class="layout">
+      <div class="left-col">
+        <div class="card">
+          <h2>Photo</h2>
+          <div class="photo-wrap" id="photo-wrap">
+            <div class="empty" id="photo-empty" title="Click to upload a photo">No photo yet — click to upload.</div>
+            <img id="photo-img" alt="Division photo" style="display:none;" />
+          </div>
+          <input type="file" id="photo-file" accept="image/*" />
+        </div>
+
+        <div class="card">
+          <h2>Info</h2>
+          <div class="stat-row">
+            <div><span class="k">Items:</span><span class="v" id="stat-items">–</span></div>
+          </div>
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" id="name" placeholder="e.g. Tires" />
+          </div>
+          <div class="field">
+            <label for="description">Description</label>
+            <textarea id="description" rows="4" placeholder="Short description shown on the division card"></textarea>
+          </div>
+          <div class="actions">
+            <button class="primary" id="save-btn">Save</button>
+            <button class="danger" id="delete-div-btn" title="Only allowed when the division is empty">Delete division</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fullscreen photo viewer — click backdrop / photo / Esc to close. -->
+    <div class="lightbox" id="lightbox">
+      <img id="lightbox-img" alt="Division photo" />
+      <div class="lightbox-actions">
+        <button class="secondary" id="lb-change">Upload / Change</button>
+        <button class="danger" id="lb-delete">Delete photo</button>
+      </div>
+    </div>
+
+  </div>
+  <div class="muted" id="empty" style="display:none; color:#666; padding:16px; text-align:center;">
+    Division not found.
+    <div style="margin-top:12px;"><a class="home" href="/store-divisions.html">&larr; Back to all divisions</a></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const divId = params.get("id") || "";
+
+    const toastHolder = document.getElementById("toast-holder");
+    const contentEl = document.getElementById("content");
+    const emptyEl = document.getElementById("empty");
+    const titleEl = document.getElementById("title");
+
+    const photoImg = document.getElementById("photo-img");
+    const photoEmpty = document.getElementById("photo-empty");
+    const photoFile = document.getElementById("photo-file");
+    const lightbox = document.getElementById("lightbox");
+    const lightboxImg = document.getElementById("lightbox-img");
+
+    let current = null;
+
+    function toast(kind, msg) {
+      const t = document.createElement("div");
+      t.className = "toast " + kind;
+      t.textContent = msg;
+      toastHolder.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
+    function setPhotoState(hasPhoto, v) {
+      if (hasPhoto) {
+        photoImg.src = `/api/store/divisions/${encodeURIComponent(divId)}/photo?v=${v || Date.now()}`;
+        photoImg.style.display = "";
+        photoEmpty.style.display = "none";
+        // If the lightbox is already open (photo replaced from inside it),
+        // refresh its source too so the new file shows.
+        if (lightbox.classList.contains("open")) lightboxImg.src = photoImg.src;
+      } else {
+        photoImg.removeAttribute("src");
+        photoImg.style.display = "none";
+        photoEmpty.style.display = "";
+      }
+    }
+
+    async function load() {
+      if (!divId) {
+        emptyEl.style.display = "";
+        return;
+      }
+      try {
+        // No single-item endpoint — pull the list and find our id. Small list,
+        // fine to filter client-side.
+        const res = await fetch("/api/store/divisions");
+        const data = await res.json();
+        const items = data.items || [];
+        current = items.find(d => d.id === divId);
+        if (!current) { emptyEl.style.display = ""; return; }
+
+        titleEl.textContent = current.name || "Division";
+        document.title = `${current.name || "Division"} - Divisions - Store`;
+        document.getElementById("name").value = current.name || "";
+        document.getElementById("description").value = current.description || "";
+        document.getElementById("stat-items").textContent = current.item_count || 0;
+
+        // Delete-division button only enabled when the division is empty.
+        const delBtn = document.getElementById("delete-div-btn");
+        if ((current.item_count || 0) > 0) {
+          delBtn.disabled = true;
+          delBtn.title = `Cannot delete: ${current.item_count} item(s) still in this division`;
+        } else {
+          delBtn.disabled = false;
+          delBtn.title = "";
+        }
+
+        setPhotoState(!!current.has_photo, current.updated_ms);
+        contentEl.style.display = "";
+      } catch (e) {
+        toast("err", "Could not load: " + e.message);
+      }
+    }
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const body = {
+        name: document.getElementById("name").value.trim(),
+        description: document.getElementById("description").value.trim(),
+      };
+      if (!body.name) { toast("err", "Name is required."); return; }
+      try {
+        const res = await fetch(`/api/store/divisions/${encodeURIComponent(divId)}`, {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        toast("ok", "Saved.");
+        titleEl.textContent = body.name;
+      } catch (e) {
+        toast("err", "Save failed: " + e.message);
+      }
+    });
+
+    document.getElementById("delete-div-btn").addEventListener("click", async () => {
+      if (!confirm(`Delete empty division "${current && current.name}"?`)) return;
+      try {
+        const res = await fetch(`/api/store/divisions/${encodeURIComponent(divId)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error(await res.text());
+        window.location.href = "/store-divisions.html";
+      } catch (e) {
+        toast("err", "Delete failed: " + e.message);
+      }
+    });
+
+    // Photo interactions — mirrors car.html:
+    //   • Click the "No photo yet" placeholder → file picker.
+    //   • Click the photo                      → fullscreen lightbox.
+    //   • Lightbox: "Upload / Change" reopens picker, "Delete photo" wipes.
+    //   • Clicking the backdrop, the image itself, or hitting Esc closes it.
+
+    // 1. Placeholder → file picker.
+    photoEmpty.addEventListener("click", () => photoFile.click());
+
+    // 2. Photo → open lightbox with same src.
+    photoImg.addEventListener("click", () => {
+      const src = photoImg.getAttribute("src");
+      if (!src) return;
+      lightboxImg.src = src;
+      lightbox.classList.add("open");
+    });
+
+    // 3. Close handlers.
+    function closeLightbox() {
+      lightbox.classList.remove("open");
+      lightboxImg.removeAttribute("src");
+    }
+    lightbox.addEventListener("click", (e) => {
+      // Ignore clicks on the action buttons themselves.
+      if (e.target === lightbox || e.target.id === "lightbox-img") closeLightbox();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && lightbox.classList.contains("open")) closeLightbox();
+    });
+
+    // 4. Lightbox actions.
+    document.getElementById("lb-change").addEventListener("click", () => photoFile.click());
+
+    // 5. File picker → base64 upload.
+    photoFile.addEventListener("change", (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      if (!f.type.startsWith("image/")) {
+        toast("err", "Please choose an image file.");
+        e.target.value = "";
+        return;
+      }
+      const r = new FileReader();
+      r.onload = async () => {
+        try {
+          const res = await fetch(`/api/store/divisions/${encodeURIComponent(divId)}/photo`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ filename: f.name, data_base64: String(r.result) }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          setPhotoState(true, Date.now());
+          toast("ok", "Photo uploaded.");
+        } catch (err) {
+          toast("err", "Upload failed: " + err.message);
+        }
+      };
+      r.readAsDataURL(f);
+      // Reset so re-picking the same filename re-fires change.
+      e.target.value = "";
+    });
+
+    document.getElementById("lb-delete").addEventListener("click", async () => {
+      if (!confirm("Remove division photo?")) return;
+      try {
+        const res = await fetch(`/api/store/divisions/${encodeURIComponent(divId)}/photo`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error(await res.text());
+        setPhotoState(false);
+        // Lightbox is meaningless once the photo is gone — dismiss it.
+        closeLightbox();
+        toast("ok", "Photo removed.");
+      } catch (e) {
+        toast("err", "Delete failed: " + e.message);
+      }
+    });
+
+    load();
+  </script>
+</body>
+
+</html>

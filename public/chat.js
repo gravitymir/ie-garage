@@ -15,9 +15,6 @@
   if (window.__chatInstalled) return;
   window.__chatInstalled = true;
 
-  const STORE_KEY = "garage-chat-feed";
-  const MAX_ITEMS = 500;
-
   const EVENT_META = {
     wheels:  { icon: "🛞", label: "Wheels" },
     checkin: { icon: "🚗", label: "Check-in" },
@@ -26,33 +23,174 @@
     generic: { icon: "📣", label: "Event" },
   };
 
-  // ---------- storage ----------
+  // Polling cadence — two speeds:
+  //   OPEN   → 20 s. User is looking at the feed, so fresh updates matter.
+  //   CLOSED → 5 min. Just enough to notice something arrived and shake
+  //            the handle; keeps request volume tiny while the chat sits
+  //            in the corner.
+  const POLL_OPEN_MS   = 20 * 1000;
+  const POLL_CLOSED_MS = 5 * 60 * 1000;
 
-  function loadFeed() {
+  // ---------- server-side feed ----------
+  //
+  // The feed lives in cars/chat/messages.json on the server. Every browser
+  // reads from the same file, so all workshop workstations see the same
+  // conversation and event log. The client keeps an in-memory cache and
+  // polls only what it doesn't already have via `?since=<maxTs>`.
+
+  let feed = [];             // in-memory cache, newest last
+  let maxTsSeen = 0;         // ts of the last message we already have
+  let pollTimerId = null;    // active setInterval, whatever cadence
+  let hasUnread = false;     // true when new stuff arrived while chat was closed
+
+  async function fetchNewMessages() {
     try {
-      const raw = localStorage.getItem(STORE_KEY);
-      const arr = raw ? JSON.parse(raw) : null;
-      if (Array.isArray(arr)) return arr;
-    } catch (_) {}
-    return seedFeed();
+      const url = "/api/chat/feed" + (maxTsSeen ? `?since=${maxTsSeen}` : "");
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+      if (!items.length) return;
+      for (const it of items) {
+        feed.push(it);
+        const t = Number(it.ts) || 0;
+        if (t > maxTsSeen) maxTsSeen = t;
+      }
+      render();
+      // New arrivals from the server = someone else's message or an event
+      // fired on another machine. Ping the notification sound (gated by
+      // the user's Settings → Chat toggle + volume).
+      playNotificationSound();
+      // Anything new that arrived while the chat is closed flips the
+      // handle into its "look at me" state (colour flip + shake).
+      if (!isOpen) {
+        hasUnread = true;
+        updateHandleState();
+      }
+    } catch (_) { /* offline / server down — try again next tick */ }
   }
 
-  function saveFeed(feed) {
+  // ---------- notification sound ----------
+  //
+  // One shared HTMLAudioElement per page load — cheap, reused for every
+  // ping. Settings are read from the cached GarageSettings on each play so
+  // the user can flip the toggle / drag the slider and the next incoming
+  // message respects it immediately.
+  let notifAudio = null;
+  function ensureNotifAudio() {
+    if (notifAudio) return notifAudio;
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(feed.slice(-MAX_ITEMS)));
+      notifAudio = new Audio("/sounds/message.mp3");
+      notifAudio.preload = "auto";
+    } catch (_) {}
+    return notifAudio;
+  }
+  async function playNotificationSound() {
+    try {
+      const s = window.GarageSettings ? await window.GarageSettings.get() : {};
+      if (s.chat_sound_enabled === false) return;
+      const vol = Math.max(0, Math.min(100, Number(s.chat_sound_volume)));
+      if (!Number.isFinite(vol) || vol <= 0) return;
+      const a = ensureNotifAudio();
+      if (!a) return;
+      a.volume = vol / 100;
+      // Rewind if a previous ping is still finishing — otherwise a rapid
+      // second arrival is silently swallowed.
+      try { a.currentTime = 0; } catch (_) {}
+      // play() returns a promise that rejects on browsers that block audio
+      // before a user gesture. That's expected on first page load — the
+      // sound will start working once the user clicks anywhere.
+      const p = a.play();
+      if (p && typeof p.catch === "function") p.catch(() => {});
     } catch (_) {}
   }
 
-  function seedFeed() {
-    const now = Date.now();
-    return [
-      { type: "event", kind: "generic", text: "Local chat & event log started.", ts: now - 1000 * 60 * 60 },
-      { type: "event", kind: "checkin", text: "11D11111 (Jaguar XJ) checked in.", ts: now - 1000 * 60 * 42 },
-      { type: "msg", author: "Sean", text: "Anyone seen the 19mm socket?", ts: now - 1000 * 60 * 38 },
-      { type: "event", kind: "wheels", text: "4× winter wheels arrived for 07G8765.", ts: now - 1000 * 60 * 25 },
-      { type: "event", kind: "done", text: "10C1234 finished and handed back to customer.", ts: now - 1000 * 60 * 12 },
-    ];
+  // Full refresh: throws away the local cache and re-reads everything from
+  // the server. Called when the chat is first opened (so the user sees the
+  // whole history) and after we know something was pruned server-side.
+  async function reloadFeed() {
+    try {
+      const res = await fetch("/api/chat/feed");
+      if (!res.ok) { feed = []; render(); return; }
+      const data = await res.json();
+      feed = Array.isArray(data.items) ? data.items : [];
+      maxTsSeen = feed.reduce((m, it) => Math.max(m, Number(it.ts) || 0), 0);
+      render();
+    } catch (_) { feed = []; render(); }
   }
+
+  // Two polling cadences share one timer — swap it out on open/close.
+  function startPolling(fast) {
+    stopPolling();
+    const delay = fast ? POLL_OPEN_MS : POLL_CLOSED_MS;
+    pollTimerId = setInterval(fetchNewMessages, delay);
+  }
+  function stopPolling() {
+    if (!pollTimerId) return;
+    clearInterval(pollTimerId);
+    pollTimerId = null;
+  }
+
+  // Add / remove the "you have unread" class on the handle button. CSS
+  // handles the colour flip and the vertical figure-8 shake animation.
+  function updateHandleState() {
+    const btn = document.getElementById("chat-handle");
+    if (!btn) return;
+    btn.classList.toggle("has-unread", hasUnread && !isOpen);
+  }
+
+  // ---------- shared settings cache (used by chat + event triggers) ----------
+  //
+  // Every page that fires chat events (job.html on Work done, store-item.html
+  // on save, …) needs to read the chat_notify_* toggles first. Fetching
+  // /api/settings on each event would be wasteful — cache it once per page
+  // load and expose a small API so callers can `await GarageSettings.get()`.
+  // reset() forces a refetch after the user saves new settings.
+  window.GarageSettings = window.GarageSettings || (function () {
+    let cached = null;
+    let pending = null;
+    async function get() {
+      if (cached) return cached;
+      if (pending) return pending;
+      pending = (async () => {
+        try {
+          const r = await fetch("/api/settings");
+          cached = r.ok ? await r.json() : {};
+        } catch (_) { cached = {}; }
+        pending = null;
+        return cached;
+      })();
+      return pending;
+    }
+    function reset() { cached = null; pending = null; }
+    return { get, reset };
+  })();
+
+  // Retention window in milliseconds. Zero (or all-zero fields) = "no limit".
+  function retentionMs(s) {
+    const m = Math.max(0, Number(s.chat_retention_months) || 0);
+    const d = Math.max(0, Number(s.chat_retention_days)   || 0);
+    const h = Math.max(0, Number(s.chat_retention_hours)  || 0);
+    const days = m * 30 + d; // months approximated to 30 days each
+    const totalHours = days * 24 + h;
+    return totalHours * 3600 * 1000;
+  }
+
+  // Display-time retention filter. The SERVER now handles physical pruning
+  // (see apply_chat_retention in main.rs) whenever `chat_retention_delete`
+  // is on. This client-side filter only hides messages past the window
+  // when delete=false — matches the setting's "hide but keep" semantics.
+  async function applyRetention(feed) {
+    let s;
+    try { s = await window.GarageSettings.get(); } catch (_) { return feed; }
+    if (!s) return feed;
+    const win = retentionMs(s);
+    if (win <= 0) return feed; // "no limit"
+    const cutoff = Date.now() - win;
+    return feed.filter(it => Number(it.ts || 0) >= cutoff);
+  }
+
+  // seedFeed removed — the feed lives on the server now, empty by default.
 
   // ---------- helpers ----------
 
@@ -118,6 +256,31 @@
       }
       #garage-chat .chat-handle .badge.show { display: inline-block; }
 
+      /* "You have unread" state — inverted colour scheme (white handle
+         with blue text) plus a subtle vertical figure-8 shake so the tab
+         waves at the user from the corner of the eye. */
+      #garage-chat .chat-handle.has-unread {
+        background: #fff;
+        color: #3275ac;
+        animation: chat-handle-shake 1.6s ease-in-out infinite;
+      }
+      #garage-chat .chat-handle.has-unread:hover { background: #eef4fb; }
+
+      /* Vertical infinity (∞ rotated 90°) — 8 samples around the lemniscate,
+         each keyframe includes the base translateY(-50%) so the handle
+         stays vertically centred on the panel edge. Amplitude 5 px, so it
+         looks like a soft wiggle rather than a spasm. */
+      @keyframes chat-handle-shake {
+        0%,   100% { transform: translate(0px,     calc(-50% - 5px)); }
+        12.5%      { transform: translate(3px,     calc(-50% - 2px)); }
+        25%        { transform: translate(0px,     calc(-50% + 0px)); }
+        37.5%      { transform: translate(-3px,    calc(-50% + 2px)); }
+        50%        { transform: translate(0px,     calc(-50% + 5px)); }
+        62.5%      { transform: translate(3px,     calc(-50% + 2px)); }
+        75%        { transform: translate(0px,     calc(-50% + 0px)); }
+        87.5%      { transform: translate(-3px,    calc(-50% - 2px)); }
+      }
+
       .chat-panel {
         flex: 1;
         background: #fff;
@@ -132,21 +295,63 @@
         background: #3275ac; color: #fff;
       }
       .chat-head h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+      /* Close button — perfectly round, white background so the red glyph
+         pops, and inline-flex centring so the × sits exactly in the middle
+         of the circle regardless of the browser's default button metrics.
+         padding:0 kills the browser default (which was inflating the
+         height and making the circle look oval before). */
       .chat-head .chat-close {
-        background: rgba(255,255,255,0.15); color: #fff;
-        border: none; width: 28px; height: 28px; border-radius: 14px;
-        cursor: pointer; font-size: 16px; font-family: inherit; line-height: 1;
+        width: 32px; height: 32px;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background: #fff;
+        color: #d64545;
+        font-size: 22px; font-weight: 700; line-height: 1;
+        font-family: inherit;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
       }
-      .chat-head .chat-close:hover { background: rgba(255,255,255,0.3); }
+      .chat-head .chat-close:hover { background: #f2f2f2; color: #b02a2a; }
 
       .chat-feed {
         flex: 1; overflow-y: auto;
         padding: 12px; background: #f5f5f5;
         display: flex; flex-direction: column; gap: 8px;
+        align-items: stretch;
       }
       .chat-empty { color: #888; font-size: 13px; text-align: center; margin-top: 20px; }
 
-      .chat-item { font-size: 13px; line-height: 1.4; }
+      /* Day separator — a small pale chip inserted between messages whose
+         local dates differ. Purposely low-contrast so it reads as
+         navigation, not content. Centred via align-self (the feed is a
+         flex column) and clipped to at most ~1/3 of the panel width. */
+      .chat-daysep {
+        align-self: center;
+        padding: 3px 12px;
+        margin: 6px 0 4px;
+        max-width: 70%;
+        background: rgba(200, 200, 200, 0.30);
+        color: #999;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-align: center;
+        white-space: nowrap;
+      }
+
+      /* Every row explicitly stretches to the panel width. */
+      .chat-item {
+        align-self: stretch;
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        font-size: 13px; line-height: 1.4;
+      }
       .chat-item .when { color: #999; font-size: 11px; }
 
       .chat-item.msg .bubble {
@@ -154,16 +359,35 @@
         padding: 7px 10px;
       }
       .chat-item.msg .who { color: #3275ac; font-weight: 600; margin-right: 6px; }
-      .chat-item.msg .text { white-space: pre-wrap; word-break: break-word; }
+      .chat-item.msg .text { white-space: pre-wrap; overflow-wrap: break-word; }
 
+      /* --- Event bubble: Flexbox ---
+         Row: [ico] | [ev-text]
+         - ico is fixed-size (flex-basis auto, no grow/shrink)
+         - ev-text takes all remaining space (flex-basis 0, grow, min-width 0)
+         The direct-child selectors (bubble greater-than child) keep the
+         rules from accidentally cascading into anything nested inside
+         .ev-text. */
       .chat-item.event .bubble {
         background: #fff7e6; border: 1px solid #f0d9a8;
         border-left: 4px solid #e6a700; border-radius: 6px;
         padding: 7px 10px;
-        display: flex; gap: 8px; align-items: flex-start;
+        display: flex;
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 8px;
+        width: 100%;
+        box-sizing: border-box;
       }
-      .chat-item.event .ico { font-size: 15px; line-height: 1.3; }
-      .chat-item.event .ev-text { flex: 1; word-break: break-word; }
+      .chat-item.event .bubble > .ico {
+        flex: 0 0 auto;
+        font-size: 15px; line-height: 1.3;
+      }
+      .chat-item.event .bubble > .ev-text {
+        flex: 1 1 0;
+        min-width: 0;
+        overflow-wrap: break-word;
+      }
       .chat-item.event .ev-kind {
         color: #a07400; font-weight: 600; font-size: 11px;
         text-transform: uppercase; letter-spacing: 0.04em;
@@ -174,15 +398,24 @@
         display: flex; flex-direction: column; gap: 6px;
       }
       .chat-compose input[type="text"], .chat-compose textarea {
-        font-family: inherit; font-size: 13px;
-        border: 1px solid #bbb; border-radius: 4px; padding: 6px 8px; width: 100%;
+        font-family: inherit; font-size: 15px; line-height: 1.4;
+        border: 1px solid #bbb; border-radius: 4px;
+        padding: 8px 10px; width: 100%;
+        box-sizing: border-box;
       }
-      .chat-compose textarea { resize: none; min-height: 38px; max-height: 120px; }
-      .chat-compose .row { display: flex; gap: 6px; }
+      /* min-height = one line of 15px font at line-height 1.4 (≈ 21px) plus
+         our 8px top + 8px bottom padding = 37px. The textarea starts at
+         exactly one line's height, so a fresh (empty) field vertically
+         centres its placeholder / caret instead of leaving dead space at
+         the bottom. The JS input listener grows it as the user types. */
+      .chat-compose textarea {
+        resize: none; min-height: 37px; max-height: 120px;
+      }
+      .chat-compose .row { display: flex; gap: 6px; align-items: stretch; }
       .chat-compose button {
-        font-family: inherit; font-size: 13px; font-weight: 600;
+        font-family: inherit; font-size: 15px; font-weight: 600;
         border: 1px solid #3275ac; background: #3275ac; color: #fff;
-        border-radius: 4px; padding: 6px 14px; cursor: pointer;
+        border-radius: 4px; padding: 8px 16px; cursor: pointer;
       }
       .chat-compose button:hover { background: #2a5f8c; }
       .chat-compose .ev-btns { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -216,7 +449,8 @@
 
   // ---------- markup ----------
 
-  let feed = [];
+  // `feed` is declared up in the server-side feed section — don't
+  // redeclare it here, that would be a SyntaxError inside the IIFE.
   let isOpen = false;
 
   function injectMarkup() {
@@ -234,12 +468,6 @@
         </div>
         <div class="chat-feed" id="chat-feed"></div>
         <div class="chat-compose">
-          <div class="ev-btns" id="chat-ev-btns">
-            <button data-kind="checkin">🚗 Check-in</button>
-            <button data-kind="wheels">🛞 Wheels in</button>
-            <button data-kind="parts">📦 Parts in</button>
-            <button data-kind="done">✅ Done</button>
-          </div>
           <div class="row">
             <textarea id="chat-input" placeholder="Write a message…" rows="1"></textarea>
             <button id="chat-send">Send</button>
@@ -253,15 +481,63 @@
 
   // ---------- rendering ----------
 
+  // Local-date key used to detect day boundaries between two items.
+  // Local (not UTC) so a message posted at 23:30 doesn't share a day with
+  // one posted 45 minutes later in the same physical evening.
+  function dayKey(ts) {
+    const d = new Date(ts);
+    return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+  }
+
+  // Day-separator label — fixed-width numeric date plus the full weekday
+  // name in English. Format: "DD.MM.YYYY Weekday" (e.g. "03.07.2026 Friday").
+  // No "Today"/"Yesterday" — the mechanic reads a fixed shape every time,
+  // so the eye doesn't have to re-parse a different label per day.
+  function formatDaySepLabel(ts) {
+    const d = new Date(ts);
+    const pad2 = n => String(n).padStart(2, "0");
+    const day   = pad2(d.getDate());
+    const month = pad2(d.getMonth() + 1);
+    const year  = d.getFullYear();
+    // Force English weekday names so "Monday"/"Tuesday" always render the
+    // same regardless of the browser's locale.
+    let weekday;
+    try {
+      weekday = d.toLocaleDateString("en-GB", { weekday: "long" });
+    } catch (_) {
+      weekday = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][d.getDay()];
+    }
+    return `${day}.${month}.${year} ${weekday}`;
+  }
+
   function render() {
     const list = document.getElementById("chat-feed");
     if (!list) return;
-    if (!feed.length) {
-      list.innerHTML = `<div class="chat-empty">No messages yet.</div>`;
-      return;
-    }
-    list.innerHTML = feed.map(renderItem).join("");
-    list.scrollTop = list.scrollHeight;
+    // Retention is enforced server-side now — anything the server sent us
+    // is fair game to display. We may still hide items past the window
+    // when `delete=false` (server keeps everything, client just hides).
+    applyRetention(feed).then(visible => {
+      if (!visible.length) {
+        list.innerHTML = `<div class="chat-empty">No messages yet.</div>`;
+        return;
+      }
+      // Walk items in order and inject a day-separator chip whenever the
+      // local date changes (including before the very first visible item).
+      const chunks = [];
+      let lastKey = "";
+      for (const it of visible) {
+        const k = dayKey(it.ts || 0);
+        if (k !== lastKey) {
+          chunks.push(
+            `<div class="chat-daysep">${esc(formatDaySepLabel(it.ts || 0))}</div>`
+          );
+          lastKey = k;
+        }
+        chunks.push(renderItem(it));
+      }
+      list.innerHTML = chunks.join("");
+      list.scrollTop = list.scrollHeight;
+    });
   }
 
   function renderItem(it) {
@@ -297,10 +573,48 @@
 
   // ---------- actions ----------
 
-  function push(item) {
-    feed.push(item);
-    saveFeed(feed);
-    render();
+  // Post a new message to the server. On success, appends the returned
+  // record (with server-assigned id/ts) to the local cache and re-renders
+  // optimistically — so the author sees their message right away without
+  // waiting for the next poll.
+  async function postMessage(text, author) {
+    try {
+      const res = await fetch("/api/chat/message", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ text, author }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const it = data && data.item;
+      if (it) {
+        feed.push(it);
+        const t = Number(it.ts) || 0;
+        if (t > maxTsSeen) maxTsSeen = t;
+        render();
+      }
+      return it;
+    } catch (_) { return null; }
+  }
+
+  async function postEvent(text, kind) {
+    try {
+      const res = await fetch("/api/chat/event", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ text, kind }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const it = data && data.item;
+      if (it) {
+        feed.push(it);
+        const t = Number(it.ts) || 0;
+        if (t > maxTsSeen) maxTsSeen = t;
+        render();
+      }
+      return it;
+    } catch (_) { return null; }
   }
 
   function authorName() {
@@ -332,7 +646,7 @@
     }
     const text = input.value.trim();
     if (!text) return;
-    push({ type: "msg", author, text, ts: Date.now() });
+    postMessage(text, author);
     input.value = "";
     input.style.height = "auto";
     input.focus();
@@ -342,8 +656,14 @@
     const el = document.getElementById("garage-chat");
     if (el) el.classList.add("open");
     isOpen = true;
-    updateBadge();
-    render();
+    // Opening the chat = "I saw the new stuff" — kill the shake / colour flip.
+    hasUnread = false;
+    updateHandleState();
+    // Full refresh so the newly-opened chat shows the current state, then
+    // start the fast poll to catch anything that arrives while it's open.
+    reloadFeed();
+    startPolling(true);
+    startInactivityTimer();
     const input = document.getElementById("chat-input");
     if (input) setTimeout(() => input.focus(), 150);
   }
@@ -352,9 +672,68 @@
     const el = document.getElementById("garage-chat");
     if (el) el.classList.remove("open");
     isOpen = false;
+    // Downshift to the slow "just watch for pings" cadence.
+    startPolling(false);
+    stopInactivityTimer();
   }
 
   function toggle() { isOpen ? close() : open(); }
+
+  // ---------- inactivity auto-close ----------
+  //
+  // When the chat is idle for `chatIdleMs()` it slides itself away. Timer
+  // is reset by any mouse/keyboard activity inside the chat panel plus
+  // arrival of new messages while it's still open. Only active while the
+  // chat is open — closed chat doesn't need to track anything.
+  let lastActivity = Date.now();
+  let inactivityTimerId = null;
+
+  // Chat-idle timeout — configurable via Settings → Chat:
+  //   1. If "Base on screensaver timeout" is on AND screensaver_idle_minutes > 0:
+  //        idle = screensaver_idle_minutes * (screensaver_pct / 100)
+  //   2. Otherwise (checkbox off OR screensaver 0):
+  //        idle = chat_autoclose_fallback_minutes
+  // Result is clamped to at least 1 minute so the chat never closes
+  // instantly on the first render tick.
+  async function chatIdleMs() {
+    const FALLBACK_MIN = 2;
+    let mins = FALLBACK_MIN;
+    try {
+      if (window.GarageSettings && typeof window.GarageSettings.get === "function") {
+        const s = (await window.GarageSettings.get()) || {};
+        const useScr = s.chat_autoclose_use_screensaver !== false;
+        const scrMins = Number(s.screensaver_idle_minutes);
+        const fallback = Number.isFinite(Number(s.chat_autoclose_fallback_minutes))
+          ? Number(s.chat_autoclose_fallback_minutes)
+          : FALLBACK_MIN;
+        if (useScr && Number.isFinite(scrMins) && scrMins > 0) {
+          const pct = Number.isFinite(Number(s.chat_autoclose_screensaver_pct))
+            ? Number(s.chat_autoclose_screensaver_pct)
+            : 30;
+          mins = Math.round(scrMins * pct / 100);
+        } else {
+          mins = fallback;
+        }
+      }
+    } catch (_) {}
+    return Math.max(1, mins) * 60 * 1000;
+  }
+
+  function bumpActivity() { lastActivity = Date.now(); }
+
+  function startInactivityTimer() {
+    if (inactivityTimerId) return;
+    bumpActivity();
+    inactivityTimerId = setInterval(async () => {
+      const idle = Date.now() - lastActivity;
+      if (idle >= await chatIdleMs()) close();
+    }, 30 * 1000); // check every 30 s — fine-grained enough for a minutes-level threshold
+  }
+  function stopInactivityTimer() {
+    if (!inactivityTimerId) return;
+    clearInterval(inactivityTimerId);
+    inactivityTimerId = null;
+  }
 
   // ---------- wiring ----------
 
@@ -376,50 +755,70 @@
       input.style.height = Math.min(input.scrollHeight, 120) + "px";
     });
 
-    document.getElementById("chat-ev-btns").addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-kind]");
-      if (!btn) return;
-      if (!isAuthed()) { refreshComposeAccess(); return; }
-      const kind = btn.dataset.kind;
-      const what = prompt(`Log "${(EVENT_META[kind] || EVENT_META.generic).label}" event — describe it:`);
-      if (what && what.trim()) {
-        push({ type: "event", kind, text: what.trim(), ts: Date.now() });
-      }
-    });
+    // Manual event buttons (Check-in / Wheels in / Parts in / Done) removed
+    // — workshop events now come from the app itself (job.html Work done,
+    // store-item.html save, etc.) gated by Settings → Chat toggles, so the
+    // manual quick-log doesn't add value here.
 
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && isOpen) close();
     });
 
-    // Sync feed across tabs/pages of the same browser.
-    window.addEventListener("storage", (e) => {
-      if (e.key === STORE_KEY) { feed = loadFeed(); render(); }
-    });
+    // Any interaction inside the chat panel resets the inactivity timer,
+    // so the chat only auto-closes when the user actually walks away.
+    const panel = document.getElementById("garage-chat");
+    if (panel) {
+      ["mousemove", "mousedown", "keydown", "wheel", "touchstart"].forEach(evt => {
+        panel.addEventListener(evt, bumpActivity, { passive: true });
+      });
+    }
   }
 
   function install() {
     if (document.getElementById("garage-chat")) return;
     if (!document.body) return;
-    injectStyles();
-    injectMarkup();
-    feed = loadFeed();
-    wire();
-    render();
-    refreshComposeAccess();
+    // Wrap each step so a failure in one doesn't kill the whole install.
+    // At minimum, injectMarkup must run so the handle button is on the page.
+    try { injectStyles(); } catch (e) { console.error("[chat.js] injectStyles failed:", e); }
+    try { injectMarkup(); } catch (e) { console.error("[chat.js] injectMarkup failed:", e); return; }
+    // The feed is server-backed now — start with an empty local cache and
+    // baseline against whatever the server currently has so we don't
+    // mistake the entire history for "unread on next fetch".
+    feed = [];
+    try { wire(); }       catch (e) { console.error("[chat.js] wire failed:", e); }
+    try { render(); }     catch (e) { console.error("[chat.js] render failed:", e); }
+    try { refreshComposeAccess(); } catch (e) { console.error("[chat.js] refreshComposeAccess failed:", e); }
+    // Baseline the max ts we've already seen (from the server) — otherwise
+    // the very first background poll would flag EVERY message as "new".
+    (async () => {
+      try {
+        const res = await fetch("/api/chat/feed");
+        if (res.ok) {
+          const data = await res.json();
+          const items = Array.isArray(data.items) ? data.items : [];
+          maxTsSeen = items.reduce((m, it) => Math.max(m, Number(it.ts) || 0), 0);
+        }
+      } catch (_) {}
+      // Kick off the background (closed) poll so a fresh page load starts
+      // watching for pings immediately.
+      startPolling(false);
+    })();
   }
 
   // ---------- public API ----------
 
   window.GarageChat = {
     open, close, toggle,
+    // Returns a promise so callers that need the message to land before
+    // navigating away (e.g. job.html Close & deliver) can await it.
     message(text, author) {
-      if (!text) return;
-      push({ type: "msg", author: author || "System", text: String(text), ts: Date.now() });
+      if (!text) return Promise.resolve(null);
+      return postMessage(String(text), author || "System");
     },
     event(text, kind) {
-      if (!text) return;
+      if (!text) return Promise.resolve(null);
       const k = EVENT_META[kind] ? kind : "generic";
-      push({ type: "event", kind: k, text: String(text), ts: Date.now() });
+      return postEvent(String(text), k);
     },
   };
 

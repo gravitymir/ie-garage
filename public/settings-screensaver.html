@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Screensaver - Settings - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 20px; margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 14px; font-size: 1.1rem; color: #3275ac; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+    .field label { font-size: 12px; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+    .field input[type=number] {
+      font-family: inherit; font-size: 14px;
+      padding: 8px 10px; border: 1px solid #bbb; border-radius: 4px;
+      width: 120px;
+    }
+    .toggle {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 14px; margin-bottom: 12px; cursor: pointer;
+    }
+    .toggle input { width: 18px; height: 18px; }
+    .actions { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    button {
+      font-family: inherit; padding: 10px 18px;
+      border: 1px solid #3275ac; border-radius: 4px;
+      cursor: pointer; font-size: 14px;
+    }
+    button.primary { background: #3275ac; color: #fff; }
+    button.primary:hover { opacity: 0.9; }
+    .help {
+      font-size: 12px; color: #666; margin: 8px 0 0;
+      background: #f5f5f5; padding: 10px; border-radius: 4px;
+      border-left: 3px solid #3275ac;
+    }
+    .warn {
+      font-size: 13px; color: #8a5a10;
+      background: #fdf2d5; padding: 10px; border-radius: 4px;
+      border-left: 3px solid #d68b18;
+      margin-bottom: 12px;
+    }
+    .toast {
+      padding: 10px 14px; border-radius: 6px;
+      margin-bottom: 12px; font-size: 13px;
+    }
+    .toast.ok  { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+    .toast.err { background: #fbe6e6; color: #8b1a1a; border: 1px solid #c0392b; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/settings.html">&larr; Settings</a>
+    <h1>Screensaver</h1>
+  </div>
+
+  <div id="toast-holder"></div>
+
+  <div class="card">
+    <h2>Idle screensaver</h2>
+
+    <div class="warn" id="no-logo-warn" style="display:none;">
+      No logo uploaded yet. The screensaver won't appear until you set one
+      in <a href="/settings-branding.html">Branding</a>.
+    </div>
+
+    <label class="toggle">
+      <input type="checkbox" id="enabled" />
+      <span>Enable screensaver on the home page</span>
+    </label>
+
+    <div class="field">
+      <label for="idle_minutes">Idle timeout (minutes)</label>
+      <input type="number" id="idle_minutes" min="1" step="1" value="10" />
+    </div>
+
+    <div class="help">
+      When the home page is left open with no mouse or keyboard activity for
+      this many minutes, the uploaded company logo fills the screen. Any
+      movement, click, or keypress dismisses it instantly. Only affects the
+      home page.
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="save-btn">Save</button>
+    </div>
+  </div>
+
+  <script>
+    const toastHolder = document.getElementById("toast-holder");
+    function toast(kind, msg) {
+      const t = document.createElement("div");
+      t.className = "toast " + kind;
+      t.textContent = msg;
+      toastHolder.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
+    async function load() {
+      try {
+        const res = await fetch("/api/settings");
+        const s = await res.json();
+        document.getElementById("enabled").checked = s.screensaver_enabled !== false;
+        const mins = Number(s.screensaver_idle_minutes);
+        document.getElementById("idle_minutes").value = Number.isFinite(mins) && mins > 0 ? mins : 10;
+        document.getElementById("no-logo-warn").style.display = s.has_logo ? "none" : "";
+      } catch (e) {
+        toast("err", "Could not load settings: " + e.message);
+      }
+    }
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const body = {
+        screensaver_enabled: document.getElementById("enabled").checked,
+        screensaver_idle_minutes: Math.max(1, Number(document.getElementById("idle_minutes").value) || 10),
+      };
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        toast("ok", "Saved.");
+      } catch (e) {
+        toast("err", "Save failed: " + e.message);
+      }
+    });
+
+    load();
+  </script>
+</body>
+
+</html>

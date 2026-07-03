@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 24px;
+      color: #111; background: #f5f5f5; min-height: 100vh;
+    }
+    .topbar {
+      max-width: 980px; margin: 0 auto 24px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.6rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #fff;
+      border: 2px solid #bbb;
+      border-radius: 12px;
+      padding: 32px 20px;
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.1s, border-color 0.1s, box-shadow 0.1s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: #3275ac;
+      box-shadow: 0 4px 14px rgba(50,117,172,0.18);
+    }
+    .card .icon {
+      font-size: 3rem;
+      font-weight: 900;
+      color: #3275ac;
+      margin-bottom: 12px;
+    }
+    .card .label {
+      font-size: 1.4rem;
+      font-weight: 600;
+    }
+    .card .desc {
+      font-size: 0.9rem;
+      color: #666;
+      margin-top: 6px;
+      text-align: center;
+    }
+    /* Disabled card — for placeholders like "Language: coming soon". */
+    .card.disabled {
+      opacity: 0.45; cursor: not-allowed;
+      pointer-events: none;
+      border-style: dashed;
+    }
+    .card .badge {
+      margin-top: 8px;
+      font-size: 0.7rem; letter-spacing: 0.1em;
+      padding: 2px 8px; border-radius: 10px;
+      background: #eee; color: #666;
+    }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <h1>Settings</h1>
+  </div>
+
+  <div class="cards">
+    <a class="card" href="/settings-branding.html">
+      <div class="icon">BRD</div>
+      <div class="label">Branding</div>
+      <div class="desc">Logo, company name, phone, address</div>
+    </a>
+    <a class="card" href="/workers.html">
+      <div class="icon">WRK</div>
+      <div class="label">Workers</div>
+      <div class="desc">Staff, passwords, permissions</div>
+    </a>
+    <a class="card" href="/settings-screensaver.html">
+      <div class="icon">SCR</div>
+      <div class="label">Screensaver</div>
+      <div class="desc">Idle timeout, show logo fullscreen</div>
+    </a>
+    <a class="card" href="/settings-chat.html">
+      <div class="icon">CHT</div>
+      <div class="label">Chat</div>
+      <div class="desc">Which workshop events post to the feed</div>
+    </a>
+    <a class="card" href="/autofill.html">
+      <div class="icon">AUT</div>
+      <div class="label">Autofill</div>
+      <div class="desc">Work → parts templates (rules)</div>
+    </a>
+    <a class="card" href="/settings-print.html">
+      <div class="icon">PRN</div>
+      <div class="label">Print</div>
+      <div class="desc">What appears on job printouts</div>
+    </a>
+    <div class="card disabled" title="Coming soon">
+      <div class="icon">LNG</div>
+      <div class="label">Language</div>
+      <div class="desc">Interface translations</div>
+      <div class="badge">Coming soon</div>
+    </div>
+  </div>
+</body>
+
+</html>

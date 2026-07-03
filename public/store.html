@@ -136,15 +136,32 @@
 
   <div class="layout">
 
-    <!-- Sidebar: divisions -->
-    <div class="card">
-      <h2>Divisions</h2>
-      <div class="div-list" id="div-list"></div>
-      <div class="div-add">
-        <input type="text" id="new-div" placeholder="New division name" />
-        <button id="add-div">+</button>
+    <!-- Sidebar: divisions + secondary actions (Stocktake). Wrapping them in
+         one column div lets the Stocktake button sit right under the
+         Divisions card without becoming a grid column of its own. -->
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div class="card">
+        <h2>Divisions</h2>
+        <!-- Click a row to filter items by division. Add / rename / delete
+             is done on the dedicated /store-divisions.html page (link below). -->
+        <div class="div-list" id="div-list"></div>
       </div>
-      <div class="status" id="div-status"></div>
+      <a href="/store-divisions.html"
+         title="Add, rename, or remove divisions"
+         style="display:block; text-align:center; padding:10px 12px;
+                border:1px solid #3275ac; border-radius:4px;
+                color:#3275ac; text-decoration:none; font-weight:600;
+                background:#fff;">
+        Divisions
+      </a>
+      <a href="/stocktake.html"
+         title="Bulk-apply barcode scans to current_count"
+         style="display:block; text-align:center; padding:10px 12px;
+                border:1px solid #3275ac; border-radius:4px;
+                color:#3275ac; text-decoration:none; font-weight:600;
+                background:#fff;">
+        Stocktake
+      </a>
     </div>
 
     <!-- Main: items -->
@@ -165,7 +182,6 @@
     let activeDivision = ""; // "" = all, "_none" = without division
 
     const divList = document.getElementById("div-list");
-    const divStatus = document.getElementById("div-status");
     const grid = document.getElementById("grid");
     const statusEl = document.getElementById("status");
     const searchEl = document.getElementById("search");
@@ -191,50 +207,11 @@
         row.className = "div-row" + (activeDivision === d.id ? " active" : "");
         row.innerHTML = `
           <span class="div-name">${d.name}</span>
-          <span class="ed-btns">
-            <button data-act="rename">ren</button>
-            <button data-act="del">del</button>
-          </span>
           <span class="count">${d.item_count || 0}</span>
         `;
-        row.addEventListener("click", (e) => {
-          if (e.target.tagName === "BUTTON") return;
+        row.addEventListener("click", () => {
           activeDivision = d.id;
           renderAll();
-        });
-        row.querySelector('[data-act="rename"]').addEventListener("click", async (e) => {
-          e.stopPropagation();
-          const name = prompt("Rename division:", d.name);
-          if (!name || name === d.name) return;
-          await withOverlay("Renaming…", async () => {
-            await fetch(`/api/store/divisions/${encodeURIComponent(d.id)}`, {
-              method: "PUT",
-              headers: {"content-type": "application/json"},
-              body: JSON.stringify({ name: name.trim() }),
-            });
-            await loadAll();
-          });
-        });
-        row.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
-          e.stopPropagation();
-          const count = d.item_count || 0;
-          if (count > 0) {
-            alert(`Cannot delete "${d.name}": it still has ${count} item(s).\n\nEmpty the division first — move those items to another division or delete them.`);
-            return;
-          }
-          if (!confirm(`Delete empty division "${d.name}"?`)) return;
-          await withOverlay("Deleting…", async () => {
-            const res = await fetch(`/api/store/divisions/${encodeURIComponent(d.id)}`, { method: "DELETE" });
-            if (!res.ok) {
-              let msg = "";
-              try { msg = (await res.text()).trim(); } catch (_) {}
-              alert(msg || `Could not delete division (HTTP ${res.status}).`);
-              await loadAll();
-              return;
-            }
-            if (activeDivision === d.id) activeDivision = "";
-            await loadAll();
-          });
         });
         divList.appendChild(row);
       });
@@ -249,10 +226,16 @@
         filtered = items.filter(it => it.division_id === activeDivision);
       }
       if (q) {
-        filtered = filtered.filter(it =>
-          [it.name, it.id_number, it.producer, it.description, it.notes]
-            .some(v => String(v || "").toLowerCase().includes(q))
-        );
+        filtered = filtered.filter(it => {
+          // Regular text fields (case-insensitive substring match).
+          if ([it.name, it.id_number, it.producer, it.description, it.notes]
+                .some(v => String(v || "").toLowerCase().includes(q))) return true;
+          // Barcodes: exact substring match too — lets the user paste a full
+          // scanner code and jump straight to the item.
+          if (Array.isArray(it.barcodes) &&
+              it.barcodes.some(b => String(b || "").toLowerCase().includes(q))) return true;
+          return false;
+        });
       }
       grid.innerHTML = "";
       if (!filtered.length) {
@@ -310,31 +293,6 @@
         statusEl.textContent = "Error: " + e;
       }
     }
-
-    document.getElementById("add-div").addEventListener("click", async () => {
-      const inp = document.getElementById("new-div");
-      const name = inp.value.trim();
-      if (!name) return;
-      showOverlay("Adding…");
-      try {
-        const res = await fetch("/api/store/divisions", {
-          method: "POST",
-          headers: {"content-type": "application/json"},
-          body: JSON.stringify({ name }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        inp.value = "";
-        divStatus.textContent = "";
-        await loadAll();
-      } catch (e) {
-        divStatus.textContent = "Error: " + e.message;
-      } finally {
-        hideOverlay();
-      }
-    });
-    document.getElementById("new-div").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") document.getElementById("add-div").click();
-    });
 
     document.getElementById("add-item").addEventListener("click", () => {
       const url = activeDivision && activeDivision !== "_none"

@@ -128,6 +128,13 @@
         <input type="text" id="producer" placeholder="e.g. Bosch" />
       </div>
 
+      <div class="field">
+        <label>Barcodes / QR codes / SKUs
+          <span style="color:#888;font-weight:normal;font-size:11px;">— one per line, any scanner code that identifies this item</span>
+        </label>
+        <textarea id="barcodes" rows="3" placeholder="6959655449112&#10;1KE-3220007425&#10;https://roadx.com/tire/H12"></textarea>
+      </div>
+
       <div id="wheel-section" style="display:none;">
         <h2 style="margin-top:14px;">Wheel / tyre details</h2>
         <div class="field">
@@ -221,6 +228,34 @@
     const presetDivision = params.get("division") || "";
     let images = [];
     let divisions = [];
+    // Snapshot of the item as it was last loaded / saved. Used by the save
+    // handler to detect stock-count changes for the chat feed (arrival when
+    // current_count goes up, low_stock when it crosses below min_count).
+    const snapshot = { current_count: 0, min_count: 0, name: "" };
+
+    // Post a stock-related event to the chat feed, gated by the matching
+    // Settings → Chat toggle. Called from the save handler after a
+    // successful PUT/POST.
+    async function fireStockEvent(kind, itemName, oldCur, newCur, minCount) {
+      if (!window.GarageChat || !window.GarageSettings) return;
+      let s;
+      try { s = await window.GarageSettings.get(); } catch (_) { return; }
+      if (!s) return;
+      const flag = kind === "arrival"   ? "chat_notify_stock_arrival"
+                 : kind === "low_stock" ? "chat_notify_low_stock"
+                 : null;
+      if (!flag || s[flag] === false) return;
+      const label = itemName || "Item";
+      if (kind === "arrival") {
+        const delta = newCur - oldCur;
+        const text = `${label}: stock arrival, ${oldCur} → ${newCur}` +
+                     (delta > 0 ? ` (+${delta})` : "");
+        window.GarageChat.event(text, "wheels");
+      } else {
+        const text = `${label}: low stock, ${newCur} left (min ${minCount}).`;
+        window.GarageChat.event(text, "parts");
+      }
+    }
 
     const titleEl = document.getElementById("title");
     const deleteBtn = document.getElementById("delete-btn");
@@ -300,11 +335,19 @@
         document.getElementById("name").value = data.name || "";
         document.getElementById("id_number").value = String(data.id_number || "").toUpperCase();
         document.getElementById("producer").value = data.producer || "";
+        // Barcodes come back as an array — join with newlines for the textarea.
+        document.getElementById("barcodes").value =
+          Array.isArray(data.barcodes) ? data.barcodes.join("\n") : "";
         document.getElementById("description").value = data.description || "";
         document.getElementById("notes").value = data.notes || "";
         document.getElementById("min_count").value = data.min_count ?? 0;
         document.getElementById("max_count").value = data.max_count ?? 0;
         document.getElementById("current_count").value = data.current_count ?? 0;
+        // Snapshot the counts as they were just loaded so the save handler
+        // can tell what actually changed (arrival vs low-stock chat events).
+        snapshot.current_count = Number(data.current_count) || 0;
+        snapshot.min_count     = Number(data.min_count)     || 0;
+        snapshot.name          = String(data.name || "");
         document.getElementById("division_id").value = data.division_id || "";
         document.getElementById("wheel_size").value = data.wheel_size || "";
         document.getElementById("wheel_season").value = data.wheel_season || "";
@@ -383,6 +426,12 @@
         name: document.getElementById("name").value.trim(),
         id_number: document.getElementById("id_number").value.trim().toUpperCase(),
         producer: document.getElementById("producer").value.trim(),
+        // Barcodes: one per line (or comma-separated). Backend also trims
+        // and dedupes case-insensitively, so pasting duplicates is safe.
+        barcodes: document.getElementById("barcodes").value
+          .split(/\r?\n|,/)
+          .map(s => s.trim())
+          .filter(Boolean),
         description: document.getElementById("description").value,
         notes: document.getElementById("notes").value,
         division_id: document.getElementById("division_id").value,
@@ -424,6 +473,26 @@
           window.history.replaceState({}, "", url);
           applyMode();
         }
+        // Compare with what we had loaded to decide which chat events fire.
+        // We only announce transitions (arrival = went up; low_stock = went
+        // BELOW min and wasn't below before) so a boring save that doesn't
+        // change stock stays out of the feed.
+        const oldCur = snapshot.current_count;
+        const newCur = body.current_count;
+        const min    = body.min_count;
+        const nameForChat = body.name || snapshot.name || "Item";
+        if (newCur > oldCur) {
+          fireStockEvent("arrival", nameForChat, oldCur, newCur, min);
+        }
+        if (min > 0 && newCur < min && oldCur >= min) {
+          fireStockEvent("low_stock", nameForChat, oldCur, newCur, min);
+        }
+        // Refresh the snapshot so a second save on the same session compares
+        // against the new baseline, not the original one.
+        snapshot.current_count = newCur;
+        snapshot.min_count = min;
+        snapshot.name = nameForChat;
+
         itemStatus.textContent = "Saved.";
         itemStatus.className = "status ok";
         setTimeout(() => { itemStatus.textContent = ""; }, 1500);

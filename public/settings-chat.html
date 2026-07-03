@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat - Settings - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 20px; margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 6px; font-size: 1.1rem; color: #3275ac; }
+    .card .lead {
+      color: #666; font-size: 13px; margin-bottom: 14px;
+    }
+
+    /* One row per event: icon + label + description + toggle checkbox.
+       Padding matches the chat feed items so it visually reads as "what a
+       message looks like if enabled". */
+    .events { display: flex; flex-direction: column; gap: 4px; }
+    .event {
+      display: grid;
+      grid-template-columns: 40px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid #eee;
+      border-radius: 6px;
+      background: #fafafa;
+      transition: background .12s;
+    }
+    .event:hover { background: #f0f6fb; }
+    .event .ic { font-size: 22px; text-align: center; line-height: 1; }
+    /* Match the status badges on /jobs.html and car.html Jobs list so the
+       mechanic sees the same glyph for the same event across the app:
+         ● blue  = Open (a new job just started)
+         ✓ yellow = Work done (mechanic finished, awaiting delivery)
+         ✓ green  = Closed (delivered, doc locked) */
+    .event .ic.ic-open    { color: #3275ac; font-weight: 900; }
+    .event .ic.ic-workdone{ color: #b58c00; font-weight: 900; }
+    .event .ic.ic-closed  { color: #2a7;    font-weight: 900; }
+    .event .body { min-width: 0; }
+    .event .name { font-weight: 700; font-size: 14px; }
+    .event .desc { color: #666; font-size: 12px; margin-top: 2px; }
+
+    /* Big, touchable toggle so it works well on phone/tablet. Inspired by
+       the standard iOS-style switch — pure CSS, no image. */
+    .toggle { position: relative; display: inline-block; width: 46px; height: 26px; }
+    .toggle input { display: none; }
+    .toggle .track {
+      position: absolute; inset: 0;
+      background: #ccc; border-radius: 999px;
+      transition: background .15s;
+      cursor: pointer;
+    }
+    .toggle .track::before {
+      content: "";
+      position: absolute; top: 3px; left: 3px;
+      width: 20px; height: 20px;
+      background: #fff; border-radius: 50%;
+      transition: transform .15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+    .toggle input:checked + .track { background: #3275ac; }
+    .toggle input:checked + .track::before { transform: translateX(20px); }
+
+    .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+    button {
+      font-family: inherit; padding: 10px 18px;
+      border: 1px solid #3275ac; border-radius: 4px;
+      cursor: pointer; font-size: 14px;
+    }
+    button.primary { background: #3275ac; color: #fff; }
+    button.primary:hover { opacity: 0.9; }
+
+    .toast {
+      padding: 10px 14px; border-radius: 6px;
+      margin-bottom: 12px; font-size: 13px;
+    }
+    .toast.ok  { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+    .toast.err { background: #fbe6e6; color: #8b1a1a; border: 1px solid #c0392b; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/settings.html">&larr; Settings</a>
+    <h1>Chat notifications</h1>
+  </div>
+
+  <div id="toast-holder"></div>
+
+  <div class="card">
+    <h2>Events posted to the chat feed</h2>
+    <div class="lead">
+      Turn on the workshop events you want the shared chat to show. Turning
+      an event off just hides it from the feed — the underlying data
+      (jobs, stock counts) is unaffected.
+    </div>
+
+    <div class="events">
+      <label class="event">
+        <div class="ic ic-open">●</div>
+        <div class="body">
+          <div class="name">Car taken in for work</div>
+          <div class="desc">A new job was created for a car (job started).</div>
+        </div>
+        <span class="toggle">
+          <input type="checkbox" id="chat_notify_job_started" />
+          <span class="track"></span>
+        </span>
+      </label>
+
+      <label class="event">
+        <div class="ic ic-workdone">✓</div>
+        <div class="body">
+          <div class="name">Work done</div>
+          <div class="desc">Mechanic marked the job as done — awaiting QC / delivery. Document is still editable.</div>
+        </div>
+        <span class="toggle">
+          <input type="checkbox" id="chat_notify_job_finished" />
+          <span class="track"></span>
+        </span>
+      </label>
+
+      <label class="event">
+        <div class="ic ic-open">↺</div>
+        <div class="body">
+          <div class="name">Job reopened</div>
+          <div class="desc">QC sent the car back for more work — the job returned to Open.</div>
+        </div>
+        <span class="toggle">
+          <input type="checkbox" id="chat_notify_job_reopened" />
+          <span class="track"></span>
+        </span>
+      </label>
+
+      <label class="event">
+        <div class="ic ic-closed">✓✓</div>
+        <div class="body">
+          <div class="name">Job closed &amp; delivered</div>
+          <div class="desc">Final: car handed to the customer, document locked from editing.</div>
+        </div>
+        <span class="toggle">
+          <input type="checkbox" id="chat_notify_job_closed" />
+          <span class="track"></span>
+        </span>
+      </label>
+
+      <label class="event">
+        <div class="ic">📦</div>
+        <div class="body">
+          <div class="name">Stock arrival</div>
+          <div class="desc">A store item's current count went up (goods received or manual increase).</div>
+        </div>
+        <span class="toggle">
+          <input type="checkbox" id="chat_notify_stock_arrival" />
+          <span class="track"></span>
+        </span>
+      </label>
+
+      <label class="event">
+        <div class="ic">⚠️</div>
+        <div class="body">
+          <div class="name">Low stock</div>
+          <div class="desc">An item dropped below its minimum count — reorder needed.</div>
+        </div>
+        <span class="toggle">
+          <input type="checkbox" id="chat_notify_low_stock" />
+          <span class="track"></span>
+        </span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Retention card — how deep the chat feed goes, and whether older
+       messages get physically pruned from localStorage. All three number
+       fields COMBINE (months × 30 days + days + hours); if every field is 0
+       we treat that as "no limit, keep everything". -->
+  <div class="card">
+    <h2>Feed depth &amp; cleanup</h2>
+    <div class="lead">
+      Pick how far back the chat feed should show. Any combination of
+      months + days + hours adds up — e.g. <b>2 months</b>, <b>15 days</b>,
+      or just <b>12 hours</b>. Leave all zero to keep the feed unlimited.
+    </div>
+
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 12px;">
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:11px; color:#555; text-transform:uppercase; letter-spacing:0.05em;" for="chat_retention_months">Months</label>
+        <input type="number" id="chat_retention_months" min="0" step="1" value="0"
+               style="font-family:inherit; padding:8px 10px; border:1px solid #bbb; border-radius:4px; font-size:14px; width:90px;" />
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:11px; color:#555; text-transform:uppercase; letter-spacing:0.05em;" for="chat_retention_days">Days</label>
+        <input type="number" id="chat_retention_days" min="0" step="1" value="0"
+               style="font-family:inherit; padding:8px 10px; border:1px solid #bbb; border-radius:4px; font-size:14px; width:90px;" />
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:11px; color:#555; text-transform:uppercase; letter-spacing:0.05em;" for="chat_retention_hours">Hours</label>
+        <input type="number" id="chat_retention_hours" min="0" step="1" value="0"
+               style="font-family:inherit; padding:8px 10px; border:1px solid #bbb; border-radius:4px; font-size:14px; width:90px;" />
+      </div>
+    </div>
+
+    <label style="display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; margin-top: 4px;">
+      <input type="checkbox" id="chat_retention_delete" style="width: 18px; height: 18px;" />
+      <span>Also <b>delete</b> messages older than this from local storage
+        <span style="display:block; color:#666; font-size:12px;">
+          Frees browser memory. Off = messages are only hidden and come back if you raise the limit.
+        </span>
+      </span>
+    </label>
+  </div>
+
+  <!-- Auto-close card: how long an idle chat can stay open before it slides
+       itself back away. Two independent knobs — either relative to the
+       screensaver's own idle timeout, or a fixed fallback in minutes. -->
+  <div class="card">
+    <h2>Close chat when idle</h2>
+    <div class="lead">
+      Chat window slides itself away after this many minutes of no activity
+      inside it (mouse / keys / new messages). Only affects when the chat
+      is open — a closed chat costs nothing anyway.
+    </div>
+
+    <label style="display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; margin-top: 4px;">
+      <input type="checkbox" id="chat_autoclose_use_screensaver" style="width: 18px; height: 18px;" />
+      <span>Base on the screensaver timeout
+        <span style="display:block; color:#666; font-size:12px;">
+          When ticked, chat closes after % of Settings → Screensaver → Idle timeout.
+          Off = use the fixed fallback below.
+        </span>
+      </span>
+    </label>
+
+    <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: end; margin-top: 14px;">
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:11px; color:#555; text-transform:uppercase; letter-spacing:0.05em;" for="chat_autoclose_screensaver_pct">Percent of screensaver</label>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input type="range" id="chat_autoclose_screensaver_pct_range" min="5" max="100" step="5" value="30"
+                 style="width: 240px;" />
+          <input type="number" id="chat_autoclose_screensaver_pct" min="5" max="100" step="5" value="30"
+                 style="font-family:inherit; padding:8px 10px; border:1px solid #bbb; border-radius:4px; font-size:14px; width:80px;" />
+          <span style="color:#666; font-size:13px;">%</span>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:11px; color:#555; text-transform:uppercase; letter-spacing:0.05em;" for="chat_autoclose_fallback_minutes">Fallback (minutes)</label>
+        <input type="number" id="chat_autoclose_fallback_minutes" min="1" step="1" value="2"
+               style="font-family:inherit; padding:8px 10px; border:1px solid #bbb; border-radius:4px; font-size:14px; width:100px;" />
+      </div>
+    </div>
+
+    <div class="muted" id="chat_autoclose_preview" style="margin-top: 10px; font-size: 13px; color: #666;"></div>
+  </div>
+
+  <!-- Notification sound card. One toggle + volume slider. Click "Test" to
+       preview the sound at the current volume. -->
+  <div class="card">
+    <h2>Notification sound</h2>
+    <div class="lead">
+      Plays when a new message or event arrives while you're on the page —
+      handy if the chat handle is out of your line of sight.
+    </div>
+
+    <label style="display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; margin-top: 4px;">
+      <input type="checkbox" id="chat_sound_enabled" style="width: 18px; height: 18px;" />
+      <span>Play a sound on new incoming messages</span>
+    </label>
+
+    <div style="display: flex; align-items: end; gap: 16px; flex-wrap: wrap; margin-top: 14px;">
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:11px; color:#555; text-transform:uppercase; letter-spacing:0.05em;" for="chat_sound_volume">Volume</label>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input type="range" id="chat_sound_volume_range" min="0" max="100" step="5" value="60" style="width: 240px;" />
+          <input type="number" id="chat_sound_volume" min="0" max="100" step="5" value="60"
+                 style="font-family:inherit; padding:8px 10px; border:1px solid #bbb; border-radius:4px; font-size:14px; width:80px;" />
+          <span style="color:#666; font-size:13px;">%</span>
+        </div>
+      </div>
+      <button type="button" id="chat_sound_test" class="secondary"
+              style="font-family:inherit; padding:8px 14px; border:1px solid #3275ac; background:#fff; color:#3275ac; border-radius:4px; cursor:pointer; font-size:14px;">
+        Test
+      </button>
+    </div>
+  </div>
+
+  <!-- Single Save button below both cards — commits every setting on the
+       page in one PUT so the user doesn't have to hunt for two buttons. -->
+  <div class="actions" style="max-width:none;">
+    <button class="primary" id="save-btn">Save all settings</button>
+  </div>
+
+  <script>
+    const KEYS = [
+      "chat_notify_job_started",
+      "chat_notify_job_finished",
+      "chat_notify_job_reopened",
+      "chat_notify_job_closed",
+      "chat_notify_stock_arrival",
+      "chat_notify_low_stock",
+    ];
+
+    const toastHolder = document.getElementById("toast-holder");
+    function toast(kind, msg) {
+      const t = document.createElement("div");
+      t.className = "toast " + kind;
+      t.textContent = msg;
+      toastHolder.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
+    // Retention field ids — batched so load/save loops stay short.
+    const RET_INT_KEYS = ["chat_retention_months", "chat_retention_days", "chat_retention_hours"];
+    const RET_BOOL_KEY = "chat_retention_delete";
+
+    // Auto-close field ids.
+    const AC_USE_KEY  = "chat_autoclose_use_screensaver";
+    const AC_PCT_KEY  = "chat_autoclose_screensaver_pct";
+    const AC_FALL_KEY = "chat_autoclose_fallback_minutes";
+
+    // Notification sound field ids.
+    const SND_ON_KEY  = "chat_sound_enabled";
+    const SND_VOL_KEY = "chat_sound_volume";
+
+    // Remembered so the live-preview line can compute against the current
+    // screensaver_idle_minutes without another fetch.
+    let screensaverIdleMinutes = 0;
+
+    async function load() {
+      try {
+        const res = await fetch("/api/settings");
+        const s = await res.json();
+        KEYS.forEach(k => {
+          const el = document.getElementById(k);
+          // Backend seeds new installs with everything enabled; only mark
+          // as "off" when explicitly set to false in settings.json.
+          el.checked = s[k] !== false;
+        });
+        RET_INT_KEYS.forEach(k => {
+          const el = document.getElementById(k);
+          const n = Number(s[k]);
+          el.value = Number.isFinite(n) && n >= 0 ? String(n) : "0";
+        });
+        document.getElementById(RET_BOOL_KEY).checked = !!s[RET_BOOL_KEY];
+
+        // Auto-close settings — with defaults matching the backend seeds.
+        document.getElementById(AC_USE_KEY).checked = s[AC_USE_KEY] !== false;
+        const pct = Number(s[AC_PCT_KEY]);
+        setPct(Number.isFinite(pct) && pct >= 5 && pct <= 100 ? pct : 30);
+        const fall = Number(s[AC_FALL_KEY]);
+        document.getElementById(AC_FALL_KEY).value =
+          Number.isFinite(fall) && fall >= 1 ? String(fall) : "2";
+
+        // Cache screensaver_idle_minutes for the live preview.
+        const scr = Number(s.screensaver_idle_minutes);
+        screensaverIdleMinutes = Number.isFinite(scr) && scr > 0 ? scr : 0;
+
+        updateAutoclosePreview();
+
+        // Sound settings.
+        document.getElementById(SND_ON_KEY).checked = s[SND_ON_KEY] !== false;
+        const vol = Number(s[SND_VOL_KEY]);
+        setVolume(Number.isFinite(vol) && vol >= 0 && vol <= 100 ? vol : 60);
+      } catch (e) {
+        toast("err", "Could not load settings: " + e.message);
+      }
+    }
+
+    // Clamp volume to 0-100, snap to multiples of 5.
+    function clampVol(n) {
+      let v = Math.round(n / 5) * 5;
+      if (!Number.isFinite(v)) v = 60;
+      return Math.max(0, Math.min(100, v));
+    }
+    function setVolume(v) {
+      const val = clampVol(v);
+      document.getElementById(SND_VOL_KEY).value = String(val);
+      document.getElementById(SND_VOL_KEY + "_range").value = String(val);
+    }
+
+    // Clamp % to allowed range and to a multiple of 5 (matches step="5").
+    function clampPct(n) {
+      let v = Math.round(n / 5) * 5;
+      if (!Number.isFinite(v)) v = 30;
+      return Math.max(5, Math.min(100, v));
+    }
+
+    // Sync the range slider and the number input — one call from either.
+    function setPct(v) {
+      const pct = clampPct(v);
+      document.getElementById(AC_PCT_KEY).value = String(pct);
+      document.getElementById(AC_PCT_KEY + "_range").value = String(pct);
+      updateAutoclosePreview();
+    }
+
+    // Human-readable preview: "Chat will close after ~ 4 minutes."
+    function updateAutoclosePreview() {
+      const el = document.getElementById("chat_autoclose_preview");
+      if (!el) return;
+      const useScr = document.getElementById(AC_USE_KEY).checked;
+      const pct    = clampPct(Number(document.getElementById(AC_PCT_KEY).value) || 30);
+      const fall   = Math.max(1, Number(document.getElementById(AC_FALL_KEY).value) || 2);
+      let mins;
+      let source;
+      if (useScr && screensaverIdleMinutes > 0) {
+        mins = Math.max(1, Math.round(screensaverIdleMinutes * pct / 100));
+        source = `${pct}% of ${screensaverIdleMinutes}-minute screensaver`;
+      } else if (useScr) {
+        mins = fall;
+        source = "screensaver not set — using fallback";
+      } else {
+        mins = fall;
+        source = "using fallback";
+      }
+      el.innerHTML =
+        `Chat will close after <b>~ ${mins} minute${mins === 1 ? "" : "s"}</b> ` +
+        `of idle. <span style="color:#999;">(${source})</span>`;
+    }
+
+    // Wire up the auto-close controls: range↔number sync, checkbox toggle,
+    // fallback field — all update the live preview.
+    document.getElementById(AC_USE_KEY).addEventListener("change", updateAutoclosePreview);
+    document.getElementById(AC_FALL_KEY).addEventListener("input", updateAutoclosePreview);
+    document.getElementById(AC_PCT_KEY).addEventListener("input", (e) => setPct(Number(e.target.value)));
+    document.getElementById(AC_PCT_KEY + "_range").addEventListener("input", (e) => setPct(Number(e.target.value)));
+
+    // Sound: range↔number sync + Test button.
+    document.getElementById(SND_VOL_KEY).addEventListener("input", (e) => setVolume(Number(e.target.value)));
+    document.getElementById(SND_VOL_KEY + "_range").addEventListener("input", (e) => setVolume(Number(e.target.value)));
+
+    // Test button plays the notification sound at the CURRENT (unsaved)
+    // volume — lets the user calibrate before committing. Also serves as
+    // the first user gesture the browser needs before allowing autoplay.
+    let testAudio = null;
+    document.getElementById("chat_sound_test").addEventListener("click", () => {
+      const vol = clampVol(Number(document.getElementById(SND_VOL_KEY).value) || 0);
+      if (vol <= 0) { toast("info", "Volume is 0."); return; }
+      try {
+        if (!testAudio) testAudio = new Audio("/sounds/message.mp3");
+        testAudio.volume = vol / 100;
+        try { testAudio.currentTime = 0; } catch (_) {}
+        const p = testAudio.play();
+        if (p && typeof p.catch === "function") p.catch((e) => toast("err", "Playback failed: " + e.message));
+      } catch (e) {
+        toast("err", "Playback failed: " + e.message);
+      }
+    });
+
+    // Any save should invalidate the shared GarageSettings cache so the
+    // chat.js filter and event-trigger callers see fresh values on the very
+    // next call — no page reload needed.
+    function bustSettingsCache() {
+      if (window.GarageSettings && typeof window.GarageSettings.reset === "function") {
+        window.GarageSettings.reset();
+      }
+    }
+
+    // Single Save handler — commits both cards (notification toggles + feed
+    // depth / cleanup) in one PUT. The backend does partial-merge on
+    // settings.json so sending only the fields on this page is safe: it
+    // won't wipe branding / screensaver / print flags managed elsewhere.
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const body = {};
+      KEYS.forEach(k => { body[k] = document.getElementById(k).checked; });
+      RET_INT_KEYS.forEach(k => {
+        const n = Math.max(0, Math.floor(Number(document.getElementById(k).value) || 0));
+        body[k] = n;
+      });
+      body[RET_BOOL_KEY] = document.getElementById(RET_BOOL_KEY).checked;
+      // Auto-close card.
+      body[AC_USE_KEY]  = document.getElementById(AC_USE_KEY).checked;
+      body[AC_PCT_KEY]  = clampPct(Number(document.getElementById(AC_PCT_KEY).value) || 30);
+      body[AC_FALL_KEY] = Math.max(1, Math.floor(Number(document.getElementById(AC_FALL_KEY).value) || 2));
+      // Sound card.
+      body[SND_ON_KEY]  = document.getElementById(SND_ON_KEY).checked;
+      body[SND_VOL_KEY] = clampVol(Number(document.getElementById(SND_VOL_KEY).value) || 0);
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        bustSettingsCache();
+        toast("ok", "Saved.");
+      } catch (e) {
+        toast("err", "Save failed: " + e.message);
+      }
+    });
+
+    load();
+  </script>
+</body>
+
+</html>
