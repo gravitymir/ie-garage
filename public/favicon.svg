@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Terminal-look favicon: chunky bright-green ">" prompt on solid black. -->
-  <rect width="32" height="32" fill="#000000"/>
-  <path d="M 8 7 L 22 16 L 8 25"
-        stroke="#00ff41"
-        stroke-width="5"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        fill="none"/>
+  <!-- 2x2 grid in the four main colours of the Cleere Auto Services logo:
+       royal blue (letters), silver (gear), white (background), black
+       (deep shadow). Checkerboard arrangement so no two adjacent
+       squares share a value — reads cleanly at 16 px in a browser tab. -->
+  <rect x="0"  y="0"  width="16" height="16" fill="#1a56b8"/>
+  <rect x="16" y="0"  width="16" height="16" fill="#ffffff"/>
+  <rect x="0"  y="16" width="16" height="16" fill="#b0b0b0"/>
+  <rect x="16" y="16" width="16" height="16" fill="#000000"/>
 </svg>

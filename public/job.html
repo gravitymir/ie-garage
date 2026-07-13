@@ -59,6 +59,38 @@
       padding: 14px; margin-bottom: 16px;
     }
     .card h2 { margin: 0 0 10px; font-size: 1rem; color: #555; }
+    /* Header row that holds a section title plus an inline action button
+       (currently the Notes mic). Keeps the button flush-right on the same
+       line as the h2 without breaking the existing "card h2" layout. */
+    .card .h2-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; margin: 0 0 10px;
+    }
+    .card .h2-row h2 { margin: 0; }
+    /* Mic button next to Notes: circular icon-only button. Turns red
+       and pulses while listening so a quick glance tells you it's on.
+       Disabled state applies when the browser has no SpeechRecognition. */
+    .mic-btn {
+      width: 32px; height: 32px; padding: 0;
+      border: 1px solid #bbb; border-radius: 50%;
+      background: #fff; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #555; flex: 0 0 auto;
+    }
+    .mic-btn:hover { border-color: #3275ac; color: #3275ac; }
+    .mic-btn.on {
+      background: #c33; color: #fff; border-color: #c33;
+      animation: mic-pulse 1.2s infinite;
+    }
+    .mic-btn:disabled {
+      opacity: 0.4; cursor: not-allowed;
+      border-color: #ccc; color: #999;
+    }
+    .mic-btn svg { width: 18px; height: 18px; display: block; }
+    @keyframes mic-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(204,51,51,0.6); }
+      50%      { box-shadow: 0 0 0 8px rgba(204,51,51,0); }
+    }
 
     .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
     .field label { font-size: 12px; color: #555; }
@@ -141,6 +173,23 @@
       align-self: center;
     }
     .fuel-badge.visible { display: inline-block; }
+    /* Gearbox chip — same shape as .fuel-badge but muted grey so it
+       stays secondary to the fuel colour-code. Only visible when the
+       car has a recognised gearbox value ("manual" / "automatic" / …). */
+    .gearbox-badge {
+      display: none;
+      padding: 3px 10px;
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      border-radius: 4px;
+      border: 1px solid #888;
+      color: #444;
+      background: #f0f0f0;
+      text-transform: uppercase;
+      align-self: center;
+    }
+    .gearbox-badge.visible { display: inline-block; }
     /* job details: half width, single column */
     .job-details { width: 100%; }
     .job-cols { display: flex; gap: 16px; align-items: flex-start; }
@@ -187,6 +236,10 @@
     .thead.work  { grid-template-columns: 1fr; }
     .thead.parts { grid-template-columns: 1fr 240px 70px 70px 36px; }
     .thead.notes { grid-template-columns: 1fr 80px; }
+    /* Column headers sit above centred inputs (see .trow.parts .pn/.pq/.pun
+       below) so the labels themselves need to be centred too — otherwise
+       they hug the left edge and drift out of line with their columns. */
+    .thead.parts > div { text-align: center; }
     .rm {
       width: 36px; height: 36px;
       padding: 0; font-size: 14px; line-height: 1;
@@ -215,12 +268,6 @@
       background: #fff; color: #3275ac; border: 1px solid #3275ac;
     }
     #reopen-btn:hover { background: #eef4fb; }
-    /* Close & deliver — final, locks the document. Danger colour so the
-       finality is visually obvious. */
-    #close-btn {
-      background: #2a7; color: #fff; border: 1px solid #1c6a52;
-    }
-    #close-btn:hover { opacity: 0.9; }
     /* One toggling button:
        - status "open"     → orange outline "Pause job"
        - status "paused"   → blue outline "Resume job" */
@@ -233,11 +280,11 @@
     .status-badge { font-weight: 700; font-size: 1.1rem; }
     .status-badge.open { color: #3275ac; }
     .status-badge.paused { color: #b26a00; }
-    /* work_done = intermediate finish (yellow), closed = final (green).
-       Legacy "finished" alias kept for jobs saved before the split. */
-    .status-badge.work_done { color: #b58c00; }
-    .status-badge.closed,
-    .status-badge.finished { color: #2a7; }
+    /* Work done — the single terminal state, green ✓✓. Legacy "closed"
+       / "finished" statuses on disk are normalised to "work_done" on
+       load (see the load handler), so no CSS fallback for them is
+       needed here. */
+    .status-badge.work_done { color: #2a7; }
     .status { font-size: 13px; color: #555; margin: 6px 0; min-height: 18px; }
     .status.err { color: #c33; }
     .status.ok { color: #393; }
@@ -255,12 +302,29 @@
     #no-plate { max-width: 420px; }
     #no-plate .row-btns { margin-top: 8px; }
 
-    /* ---------- print ---------- */
+    /* ---------- print ----------
+       Two-mode setup:
+       - On screen the sheet is display:none (out of the layout entirely,
+         doesn't reserve space).
+       - On print we switch to the classic visibility-based technique:
+         hide every element, then reveal only #print-area and its
+         descendants, and pull #print-area to the page origin. This is
+         more forgiving than `display: none` on ancestors — some
+         browsers ignore a `display: none` on <body>'s siblings during
+         print snapshots, leaving overlays/handles visible over an
+         empty sheet. visibility survives that. */
     #print-area { display: none; }
     @media print {
-      body { background: #fff; padding: 0; }
-      body > *:not(#print-area) { display: none !important; }
-      #print-area { display: block !important; padding: 16px; }
+      html, body { background: #fff !important; margin: 0; padding: 0; }
+      body * { visibility: hidden !important; }
+      #print-area, #print-area * { visibility: visible !important; }
+      #print-area {
+        display: block !important;
+        position: absolute; top: 0; left: 0; right: 0;
+        padding: 16px;
+        box-sizing: border-box;
+        color: #000;
+      }
       #print-area h1 { font-size: 1.4rem; margin: 0 0 4px; }
       #print-area .sub { color: #333; margin-bottom: 12px; }
       #print-area table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; table-layout: fixed; }
@@ -275,6 +339,7 @@
   <script src="/auth.js"></script>
   <script src="/fuel-detect.js"></script>
   <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
 </head>
 
 <body>
@@ -307,6 +372,7 @@
       <span class="vi" id="v-engine-wrap" style="display:none;"><label>Engine</label><b id="v-engine"></b></span>
       <span class="vi" id="v-disp-wrap" style="display:none;"><label>Vol</label><b id="v-disp"></b></span>
       <span id="v-fuel-badge" class="fuel-badge"></span>
+      <span id="v-gearbox-badge" class="gearbox-badge" title="Gearbox"></span>
     </div>
 
     <div class="job-cols">
@@ -356,9 +422,6 @@
       <div class="job-right">
         <div class="card">
           <h2>Work performed</h2>
-          <div class="thead trow work">
-            <div>Description</div>
-          </div>
           <datalist id="autofill-triggers"></datalist>
           <div class="table" id="work-body"></div>
         </div>
@@ -366,7 +429,7 @@
         <div class="card">
           <h2>Parts used</h2>
           <div class="thead trow parts">
-            <div>Part</div><div>Number</div><div>Qty</div><div>Unit</div><div></div>
+            <div></div><div>Number</div><div>Qty</div><div>Unit</div><div></div>
           </div>
           <datalist id="part-unit-suggestions">
             <option value="pcs"></option>
@@ -384,8 +447,20 @@
         </div>
 
         <div class="card">
-          <h2>Notes</h2>
-          <div class="thead trow notes"><div>Note</div><div></div></div>
+          <div class="h2-row">
+            <h2>Notes</h2>
+            <button type="button" id="notes-mic" class="mic-btn"
+                    title="Dictate a note (Web Speech API)"
+                    aria-label="Dictate a note">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="2" width="6" height="12" rx="3"/>
+                <path d="M5 10a7 7 0 0 0 14 0"/>
+                <line x1="12" y1="19" x2="12" y2="22"/>
+                <line x1="8"  y1="22" x2="16" y2="22"/>
+              </svg>
+            </button>
+          </div>
           <div class="table" id="notes-body"></div>
         </div>
       </div>
@@ -395,11 +470,12 @@
       <button id="save-btn">Save</button>
       <button id="pause-btn" class="secondary">Pause job</button>
       <button id="work-done-btn">Work done</button>
-      <!-- Reopen + Close & deliver only appear once the job is Work done.
-           Kept in the DOM so we don't have to insert them dynamically; UI
-           hides them via display:none otherwise. -->
+      <!-- Reopen shows only while Work done was stamped TODAY (local
+           time). Once the day rolls over the document freezes: Reopen
+           disappears and a "Create new job" button takes its place,
+           which spawns a fresh job on the same car. -->
       <button id="reopen-btn" style="display:none;">Reopen</button>
-      <button id="close-btn" style="display:none;">Close &amp; deliver</button>
+      <button id="new-job-btn" style="display:none;">Create new job</button>
       <button class="secondary" id="print-btn">Print</button>
     </div>
     <div class="status" id="status"></div>
@@ -441,7 +517,9 @@
     // Push a workshop event to the shared chat feed — but only when the
     // matching toggle is on in Settings → Chat. Settings are cached by
     // GarageSettings so this doesn't add a fetch per click.
-    // Supported kinds: "job_started" | "job_finished" | "job_reopened" | "job_closed".
+    // Supported kinds: "job_started" | "job_finished" | "job_reopened".
+    // (Work done is the terminal state now — there's no separate close
+    // event to fire.)
     async function fireChatEvent(kind) {
       if (!window.GarageChat || !window.GarageSettings) return;
       let s;
@@ -450,21 +528,29 @@
       const flag = kind === "job_started"  ? "chat_notify_job_started"
                  : kind === "job_finished" ? "chat_notify_job_finished"
                  : kind === "job_reopened" ? "chat_notify_job_reopened"
-                 : kind === "job_closed"   ? "chat_notify_job_closed"
                  : null;
       if (!flag || s[flag] === false) return;
       // Best-effort vehicle blurb so the feed reads naturally.
       const mk = String((car && car.make) || "").trim();
       const md = String((car && car.model) || "").trim();
       const vehicle = [mk, md].filter(Boolean).join(" ");
-      const label = vehicle ? `${plate} (${vehicle})` : plate;
+      // Markdown-style [label](/path) — chat.js's formatEventText turns
+      // these into <a> tags. Plate → car page, event verb → this exact
+      // job. When file_name isn't set yet (first ever Save on a draft)
+      // the event verb falls back to plain text.
+      const carHref = `/car.html?plate=${encodeURIComponent(plate)}`;
+      const jobHref = fileName
+        ? `/job.html?plate=${encodeURIComponent(plate)}&file=${encodeURIComponent(fileName)}`
+        : "";
+      const plateLink = `[${plate}](${carHref})`;
+      const label = vehicle ? `${plateLink} (${vehicle})` : plateLink;
+      const verb = (text) => jobHref ? `[${text}](${jobHref})` : text;
       // Kind → (text, GarageChat.event kind). Keeping distinct wording per
       // stage so the feed reads as a narrative when you scan through.
       const map = {
-        job_started:  { text: `${label} checked in — job started.`,     evKind: "checkin" },
-        job_finished: { text: `${label} — work done, awaiting delivery.`, evKind: "done" },
-        job_reopened: { text: `${label} — reopened for rework.`,          evKind: "generic" },
-        job_closed:   { text: `${label} — closed & delivered.`,           evKind: "done" },
+        job_started:  { text: `${label} checked in — ${verb("job started")}.`, evKind: "checkin" },
+        job_finished: { text: `${label} — ${verb("job done")}.`,               evKind: "done"    },
+        job_reopened: { text: `${label} — ${verb("job reopened")}.`,           evKind: "generic" },
       };
       const m = map[kind];
       if (m) window.GarageChat.event(m.text, m.evKind);
@@ -530,10 +616,11 @@
       if (!start) return null;
       const end = parseDT(endStr) || new Date();
       let total = 0, activeStart = start, active = true;
-      // work_done / closed act as implicit pauses — the time between mechanic
-      // finishing and the customer picking up isn't work. reopen acts as an
-      // implicit resume so continued work after a QC-return counts again.
-      const STOP  = new Set(["pause", "work_done", "closed"]);
+      // work_done acts as an implicit pause — time after the mechanic
+      // marks it stops counting even if Reopen fires later. reopen acts
+      // as an implicit resume so continued work after a QC-return
+      // counts again.
+      const STOP  = new Set(["pause", "work_done"]);
       const START = new Set(["resume", "reopen"]);
       for (const ev of (evs || [])) {
         const t = parseDT(ev.at);
@@ -548,6 +635,108 @@
       const s = activeSeconds(dateIn, evs, endStr);
       return s == null ? null : Math.round(s / 60);
     }
+
+    // Parse a strict "HH:MM" string into minutes-since-midnight. Returns
+    // null on ANYTHING malformed — that null is what turns lunch
+    // deduction off when the user deleted a digit from the settings.
+    function parseHHMM(s) {
+      const m = String(s || "").match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) return null;
+      const h = Number(m[1]), mn = Number(m[2]);
+      if (!Number.isFinite(h) || !Number.isFinite(mn) || h > 23 || mn > 59) return null;
+      return h * 60 + mn;
+    }
+    // Overlap in milliseconds between the interval [aStartMs, aEndMs]
+    // and every daily [lunchStart, lunchEnd] window it spans.
+    // Multi-day jobs correctly sum a lunch per calendar day.
+    // Returns 0 for a malformed lunch window (either bound unparseable
+    // or start >= end).
+    function lunchOverlapMs(aStartMs, aEndMs, lStartHHMM, lEndHHMM) {
+      if (aEndMs <= aStartMs) return 0;
+      const ls = parseHHMM(lStartHHMM);
+      const le = parseHHMM(lEndHHMM);
+      if (ls == null || le == null || le <= ls) return 0;
+      const lsMs = ls * 60 * 1000;
+      const leMs = le * 60 * 1000;
+      let total = 0;
+      const d = new Date(aStartMs);
+      d.setHours(0, 0, 0, 0);
+      while (d.getTime() <= aEndMs) {
+        const dayStart = d.getTime();
+        const lStart = dayStart + lsMs;
+        const lEnd   = dayStart + leMs;
+        const overlapS = Math.max(aStartMs, lStart);
+        const overlapE = Math.min(aEndMs, lEnd);
+        if (overlapE > overlapS) total += (overlapE - overlapS);
+        d.setDate(d.getDate() + 1);
+      }
+      return total;
+    }
+    // Lunch deducted from ACTIVE intervals only. Walks the same event
+    // machine as activeSeconds so time the mechanic was already Paused
+    // through doesn't get subtracted twice.
+    function lunchDeductedSeconds(dateIn, evs, endStr, lStartHHMM, lEndHHMM) {
+      const start = parseDT(dateIn);
+      if (!start) return 0;
+      const end = parseDT(endStr) || new Date();
+      let totalMs = 0;
+      let activeStart = start.getTime();
+      let active = true;
+      const STOP  = new Set(["pause", "work_done"]);
+      const START = new Set(["resume", "reopen"]);
+      for (const ev of (evs || [])) {
+        const t = parseDT(ev.at);
+        if (!t) continue;
+        const tMs = t.getTime();
+        if (STOP.has(ev.type) && active) {
+          totalMs += lunchOverlapMs(activeStart, tMs, lStartHHMM, lEndHHMM);
+          active = false;
+        } else if (START.has(ev.type) && !active) {
+          activeStart = tMs;
+          active = true;
+        }
+      }
+      if (active) totalMs += lunchOverlapMs(activeStart, end.getTime(), lStartHHMM, lEndHHMM);
+      return Math.floor(totalMs / 1000);
+    }
+    // Session-wide snapshot of the /api/settings values needed for
+    // elapsed-time display. Refreshed lazily on first render and on
+    // window focus (in case the operator edited settings in another
+    // tab). Fallback constants match the user-preferred defaults:
+    // worktime 09:00-18:00, lunch 13:00-14:00.
+    let elapsedSettings = {
+      deduct_lunch_from_elapsed: false,
+      work_lunch_start_hhmm: "13:00",
+      work_lunch_end_hhmm:   "14:00",
+    };
+    async function refreshElapsedSettings() {
+      if (!window.GarageSettings) return;
+      try {
+        const s = await window.GarageSettings.get();
+        if (!s) return;
+        elapsedSettings.deduct_lunch_from_elapsed =
+          !!s.deduct_lunch_from_elapsed;
+        elapsedSettings.work_lunch_start_hhmm =
+          s.work_lunch_start_hhmm || "13:00";
+        elapsedSettings.work_lunch_end_hhmm =
+          s.work_lunch_end_hhmm   || "14:00";
+      } catch (_) { /* keep the previous snapshot */ }
+    }
+    // Fire-and-forget on load; the first render might use defaults,
+    // but any tick / refresh after this settles picks up real values.
+    refreshElapsedSettings();
+    window.addEventListener("focus", refreshElapsedSettings);
+    // Convenience: seconds that should be subtracted from a raw
+    // active total. Zero when deduction is off or the lunch settings
+    // are broken.
+    function currentLunchDeductedSeconds(dateIn, evs, endStr) {
+      if (!elapsedSettings.deduct_lunch_from_elapsed) return 0;
+      return lunchDeductedSeconds(
+        dateIn, evs, endStr,
+        elapsedSettings.work_lunch_start_hhmm,
+        elapsedSettings.work_lunch_end_hhmm,
+      );
+    }
     function toStr(v) {
       if (v == null) return "";
       if (typeof v === "object") return v.name || v.title || v.model || v.text || "";
@@ -559,11 +748,15 @@
     let fileName = params.get("file") || null;
     let car = {};
     // status flow: open ⇄ paused → work_done ⇄ (reopen back to open) → closed.
-    // work_done: mechanic finished, doc still editable (QC / test drive).
-    // closed:    delivered to customer, doc locked from editing.
-    // Legacy "finished" from before the split is normalised to "closed" on load.
+    // work_done: mechanic finished. Editable ONLY on the same calendar
+    //   day it was stamped (work_done_ms). After midnight the doc is
+    //   frozen — no Save, no Reopen — and a "Create new job" button
+    //   replaces Reopen. Legacy "closed" / "finished" on disk are
+    //   normalised to "work_done" on load and freeze immediately if
+    //   they carry no work_done_ms (they were saved before the split).
     let status = "open";
-    let events = [];        // [{type:"pause"|"resume"|"work_done"|"reopen"|"closed", at:"DD.MM.YYYY HH:MM:SS"}]
+    let events = [];        // [{type:"pause"|"resume"|"work_done"|"reopen", at:"DD.MM.YYYY HH:MM:SS"}]
+    let workDoneMs = 0;     // epoch ms when Work done was last stamped
     let savedWorkerId = ""; // assigned worker (job is a draft without one)
 
     const statusEl = document.getElementById("status");
@@ -1120,10 +1313,13 @@
         time_out: document.getElementById("time-out").value.trim(),
         kilometrage: document.getElementById("mileage-km").value.trim(),
         mileage: document.getElementById("mileage-mi").value.trim(),
-        // Legacy boolean kept in sync with status for older consumers
-        // (backend fallback, jobs-list filters written before the split).
-        finished: (status === "closed" || status === "finished"),
+        // Legacy boolean — kept in sync with a work-done-or-later status
+        // so pre-split consumers (backend fallbacks, older jobs-list
+        // filters) still see a terminal job as "finished". The status
+        // field itself is the modern source of truth.
+        finished: (status === "work_done"),
         status: status,
+        work_done_ms: workDoneMs || 0,
         events: events,
         worker_id: document.getElementById("worker-select").value,
         work, parts, notes,
@@ -1212,9 +1408,12 @@
     }
 
     // ---------- save ----------
-    async function saveJob() {
+    // sourceBtn is the button the user clicked (Save / Pause / Work done).
+    // We flash *that* button on success/failure via the shared save-
+    // feedback pattern — button changes to green "Saved" / red "Problem"
+    // in place, no layout jump, no separate status line.
+    async function saveJob(sourceBtn) {
       const body = collect();
-      setStatus("Saving…");
       showOverlay("Saving…");
       try {
         const res = await fetch(`/api/cars/${encodeURIComponent(plate)}/jobs`, {
@@ -1237,19 +1436,21 @@
           if (typeof refreshDeleteVis === "function") refreshDeleteVis();
           if (wasFirstSave) fireChatEvent("job_started");
         }
-        // Match the message to what just happened. status is already updated
-        // by the caller (work_done / close handlers) before saveJob is called.
-        const msg =
-          status === "closed"    ? "Job closed & delivered." :
-          status === "work_done" ? "Work done."              :
-          status === "paused"    ? "Paused."                 :
-          "Saved.";
-        setStatus(msg, "ok");
+        // Green flash on the button the user clicked. If the source
+        // button isn't visible (e.g. Save handler after status just
+        // flipped to work_done and Save vanished), we silently skip —
+        // the button disappearing is confirmation enough.
+        if (sourceBtn && typeof window.flashSaveStatus === "function") {
+          flashSaveStatus(sourceBtn, "ok");
+        }
         renderUsedParts();
-        setTimeout(() => setStatus(""), 1500);
         return true;
       } catch (e) {
-        setStatus("Error: " + e.message, "err");
+        if (sourceBtn && typeof window.flashSaveStatus === "function") {
+          flashSaveStatus(sourceBtn, "err");
+        } else {
+          setStatus("Error: " + e.message, "err");
+        }
         return false;
       } finally { hideOverlay(); }
     }
@@ -1276,7 +1477,6 @@
         resume:    "Resumed",
         work_done: "Work done",
         reopen:    "Reopened",
-        closed:    "Closed",
       };
       const rows = [["Started", document.getElementById("time-in").value.trim()]];
       events.forEach(ev => rows.push([LABELS[ev.type] || ev.type, ev.at]));
@@ -1286,24 +1486,42 @@
       refreshTotalTime();
     }
 
-    // Compute and paint the "Total time" line under the timeline. When the
-    // job is Open we tick every second (see startTotalTick); when Paused or
-    // Finished the value is static (activeMinutes stops counting after the
-    // last pause / at time_out).
+    // Compute and paint the "Total time" line under the timeline. When
+    // the job is Open we tick every second (see startTotalTick); when
+    // Paused or Work done the value is static (activeMinutes stops
+    // counting after the last pause / at time_out).
     function refreshTotalTime() {
       const totalEl = document.getElementById("tl-total");
       if (!totalEl) return;
       const dateIn = document.getElementById("time-in").value.trim();
-      // Once the mechanic marks Work done (or the job is Closed), the total
-      // freezes at time_out. For legacy "finished" records the same applies.
-      const endStr = (status === "work_done" || status === "closed" || status === "finished")
+      // Once the mechanic marks Work done, the total freezes at time_out.
+      const endStr = (status === "work_done")
         ? document.getElementById("time-out").value.trim()
         : "";
-      const secs = activeSeconds(dateIn, events, endStr);
-      const text = (secs == null) ? "—" : fmtHMS(secs);
+      const rawSecs = activeSeconds(dateIn, events, endStr);
+      if (rawSecs == null) {
+        totalEl.classList.toggle("live", status === "open");
+        totalEl.innerHTML =
+          `<span class="tl-k">Total time</span><span class="tl-v">—</span>`;
+        return;
+      }
+      const lunchSecs = currentLunchDeductedSeconds(dateIn, events, endStr);
+      const netSecs   = Math.max(0, rawSecs - lunchSecs);
       totalEl.classList.toggle("live", status === "open");
-      totalEl.innerHTML =
-        `<span class="tl-k">Total time</span><span class="tl-v">${esc(text)}</span>`;
+      // When there's an actual deduction show three lines so the number
+      // that matters (net) stays the headline, with the raw total and
+      // the subtracted lunch minutes right below for transparency.
+      if (lunchSecs > 0) {
+        totalEl.innerHTML =
+          `<span class="tl-k">Total time</span>`
+        + `<span class="tl-v">${esc(fmtHMS(netSecs))}</span>`
+        + `<div class="tl-sub" style="font-size:0.85em;color:#666;grid-column:1/-1;margin-top:2px;">`
+        +   `raw ${esc(fmtHMS(rawSecs))} · lunch −${esc(fmtHMS(lunchSecs))}`
+        + `</div>`;
+      } else {
+        totalEl.innerHTML =
+          `<span class="tl-k">Total time</span><span class="tl-v">${esc(fmtHMS(netSecs))}</span>`;
+      }
     }
 
     // Live tick for the running job — 1 s cadence, only while Open.
@@ -1318,25 +1536,37 @@
       totalTickId = null;
     }
 
+    // True while workDoneMs falls on today's local calendar date.
+    // Zero / missing → false (treated as a stale doc that predates the
+    // work_done_ms field). The date comparison uses local time on
+    // purpose — the mechanic's day boundary is local midnight, not UTC.
+    function isWorkDoneToday() {
+      if (!workDoneMs) return false;
+      const d = new Date(workDoneMs);
+      const n = new Date();
+      return d.getFullYear() === n.getFullYear()
+          && d.getMonth()    === n.getMonth()
+          && d.getDate()     === n.getDate();
+    }
+
     function updateStatusUI() {
       // Label + colour badge.
       const LABELS = {
         open:      "● Open",
         paused:    "⏸ Paused",
-        work_done: "✓ Work done",
-        closed:    "✓✓ Closed",
-        finished:  "✓✓ Closed", // legacy alias
+        work_done: "✓✓ Work done",
       };
       const txt = LABELS[status] || "● Open";
-      // For badge class use the canonical name (finished → closed).
-      const cls = "status-badge " + (status === "finished" ? "closed" : status);
       const el = document.getElementById("status-badge-tl");
-      if (el) { el.textContent = txt; el.className = cls; }
+      if (el) { el.textContent = txt; el.className = "status-badge " + status; }
 
       const isOpen     = (status === "open");
       const isPaused   = (status === "paused");
       const isWorkDone = (status === "work_done");
-      const isClosed   = (status === "closed" || status === "finished");
+      // Frozen = Work done AND the day has rolled over. Also covers
+      // legacy jobs whose work_done_ms wasn't recorded — we assume the
+      // day has passed and lock the doc.
+      const isFrozen   = isWorkDone && !isWorkDoneToday();
 
       const show = (id, visible) => {
         const b = document.getElementById(id);
@@ -1353,24 +1583,25 @@
         pb.style.display = "none";
       }
 
-      // Save available whenever the doc is editable (i.e. not Closed).
-      show("save-btn",      !isClosed);
-      // Work done — mechanic-side finish. Only from Open / Paused.
+      // Save + Work done + Reopen available only while the doc is
+      // editable. On a frozen doc only "Create new job" and Print
+      // remain — the mechanic starts a fresh job on the same car
+      // instead of resurrecting yesterday's paperwork.
+      show("save-btn",      !isFrozen);
       show("work-done-btn", isOpen || isPaused);
-      // Reopen + Close & deliver — only from Work done.
-      show("reopen-btn",    isWorkDone);
-      show("close-btn",     isWorkDone);
+      show("reopen-btn",    isWorkDone && !isFrozen);
+      show("new-job-btn",   isFrozen);
 
       // Live-tick only while Open.
       if (isOpen) startTotalTick(); else stopTotalTick();
       renderTimeline();
     }
 
-    // Without an assigned worker the job is a draft: Save/Print/Pause/Work
-    // done/Close all blocked (Reopen is safe — it just reverts state).
+    // Without an assigned worker the job is a draft: Save/Print/Pause/
+    // Work done all blocked (Reopen is safe — it just reverts state).
     function updateDraftState() {
       const ok = !!document.getElementById("worker-select").value;
-      ["save-btn", "print-btn", "pause-btn", "work-done-btn", "close-btn"].forEach(id => {
+      ["save-btn", "print-btn", "pause-btn", "work-done-btn"].forEach(id => {
         const b = document.getElementById(id);
         if (b) b.disabled = !ok;
       });
@@ -1406,23 +1637,25 @@
       updateDraftState();
     }
 
-    // Lock the job from editing once it is Closed (delivered to customer).
-    // Work done alone does NOT call this — the doc stays editable so QC can
-    // still fix things or send it back to Open via Reopen.
+    // Lock the job from editing once it is Frozen — i.e. Work done was
+    // stamped on a previous calendar day. Reopen never comes back on a
+    // frozen doc; only Print and Create-new-job stay live. The button
+    // visibility is already handled by updateStatusUI (isFrozen branch);
+    // this function just kills text editability.
     function lockUI() {
       document.querySelectorAll("#job input, #job textarea").forEach(i => { i.readOnly = true; });
       document.querySelectorAll("#job [data-add], #job .rm").forEach(b => { b.style.display = "none"; });
-      ["save-btn", "work-done-btn", "reopen-btn", "close-btn"].forEach(id => {
-        const b = document.getElementById(id);
-        if (b) b.style.display = "none";
-      });
       document.getElementById("worker-select").disabled = true;
       updateStatusUI();
     }
 
-    document.getElementById("save-btn").addEventListener("click", () => saveJob());
+    document.getElementById("save-btn").addEventListener("click", (ev) => saveJob(ev.currentTarget));
 
     document.getElementById("pause-btn").addEventListener("click", async () => {
+      // No sourceBtn — the button already conveys success by flipping
+      // between "Pause job" ↔ "Resume job" via updateStatusUI(). A green
+      // "Saved" flash on top of that would be a second, redundant signal
+      // and reads like the plain Save button ran.
       const act = status === "paused" ? "resume" : "pause";
       events.push({ type: act, at: nowDateTime() });
       status = act === "pause" ? "paused" : "open";
@@ -1439,7 +1672,7 @@
     // Stamps time_out but leaves the document editable. QC / test-drive step
     // can still fix things, add notes, or Reopen the job back to Open.
     document.getElementById("work-done-btn").addEventListener("click", async () => {
-      if (!confirm("Mark this job as Work done? Time out will be stamped. The document stays editable — click Close & deliver when the customer picks up.")) return;
+      if (!confirm("Mark this job as Work done? Time out will be stamped. The document stays editable until midnight — Reopen if you need to fix anything today, then it freezes.")) return;
       // If paused, work physically stopped at the last pause — stamp Time out
       // at that moment (dead time between pause and now shouldn't count).
       let stamp = nowDateTime();
@@ -1447,11 +1680,13 @@
         const lastPause = [...events].reverse().find(ev => ev.type === "pause");
         if (lastPause && lastPause.at) stamp = lastPause.at;
       }
-      const prevStatus  = status;
-      const prevTimeOut = document.getElementById("time-out").value;
+      const prevStatus     = status;
+      const prevTimeOut    = document.getElementById("time-out").value;
+      const prevWorkDoneMs = workDoneMs;
       document.getElementById("time-out").value = stamp;
       events.push({ type: "work_done", at: stamp });
       status = "work_done";
+      workDoneMs = Date.now();
       updateStatusUI();
       const ok = await saveJob();
       if (ok) {
@@ -1460,6 +1695,7 @@
         events.pop();
         document.getElementById("time-out").value = prevTimeOut;
         status = prevStatus;
+        workDoneMs = prevWorkDoneMs;
         updateStatusUI();
       }
     });
@@ -1485,27 +1721,12 @@
       }
     });
 
-    // ---------- Close & deliver: final, locks the document ----------
-    document.getElementById("close-btn").addEventListener("click", async () => {
-      if (!confirm("Close and deliver this job? The document will be locked from further editing. This cannot be undone.")) return;
-      const stamp = nowDateTime();
-      events.push({ type: "closed", at: stamp });
-      status = "closed";
-      const ok = await saveJob();
-      if (ok) {
-        // Await here — fireChatEvent may still be fetching settings on the
-        // first call of the session; if we redirect first, that fetch gets
-        // aborted and the event never posts.
-        await fireChatEvent("job_closed");
-        lockUI();
-        // Same convention as before — after final close, send the user to
-        // the global jobs list.
-        window.location.href = "/jobs.html";
-      } else { // revert
-        events.pop();
-        status = "work_done";
-        updateStatusUI();
-      }
+    // ---------- Create new job: frozen doc's escape hatch ----------
+    // Shown in place of Reopen once the Work-done day has passed. Sends
+    // the mechanic to a fresh /job.html for the same car — the old
+    // document stays on disk as an immutable historical record.
+    document.getElementById("new-job-btn").addEventListener("click", () => {
+      window.location.href = `/job.html?plate=${encodeURIComponent(plate)}`;
     });
 
     // ---------- delete job (bottom-of-page danger zone) ----------
@@ -1540,16 +1761,20 @@
     document.getElementById("print-btn").addEventListener("click", () => {
       const d = collect();
       const jobId = fileName ? fileName.replace(/\.json$/i, "") : plate; // e.g. "11C16861_3"
-      const isClosed = (status === "closed" || status === "finished");
       const statusLabel =
-        isClosed              ? "CLOSED"    :
         status === "work_done" ? "WORK DONE" :
         status === "paused"    ? "PAUSED"    : "OPEN";
-      const endStr = (isClosed || status === "work_done") ? d.time_out : "";
-      const total = fmtMins(activeMinutes(d.date_in, events, endStr));
+      const endStr = (status === "work_done") ? d.time_out : "";
+      const rawSecs   = activeSeconds(d.date_in, events, endStr) || 0;
+      const lunchSecs = currentLunchDeductedSeconds(d.date_in, events, endStr);
+      const netSecs   = Math.max(0, rawSecs - lunchSecs);
+      const total     = fmtMins(Math.round(netSecs / 60));
+      const totalLine = lunchSecs > 0
+        ? `<b>${total || "—"}</b> · raw ${fmtMins(Math.round(rawSecs / 60))} · lunch −${fmtMins(Math.round(lunchSecs / 60))}`
+        : `<b>${total || "—"}</b>`;
       const EV_LABELS = {
         pause: "Paused", resume: "Resumed",
-        work_done: "Work done", reopen: "Reopened", closed: "Closed",
+        work_done: "Work done", reopen: "Reopened",
       };
       const logRows = [["Started", d.date_in]]
         .concat(events.map(ev => [EV_LABELS[ev.type] || ev.type, ev.at]));
@@ -1557,8 +1782,8 @@
       // Empty tables (and their headings) are omitted from the printout.
       const workSection = d.work.length ? `
         <h3>Work performed</h3>
-        <table><thead><tr><th style="width:4ch;">#</th><th>Description</th></tr></thead><tbody>${
-          d.work.map((w, i) => `<tr><td>${i + 1}</td><td>${esc(w.description)}</td></tr>`).join("")
+        <table><thead><tr><th style="width:4ch;text-align:center;">#</th><th>Description</th></tr></thead><tbody>${
+          d.work.map((w, i) => `<tr><td style="text-align:center;">${i + 1}</td><td>${esc(w.description)}</td></tr>`).join("")
         }</tbody></table>` : "";
       const partsSection = d.parts.length ? `
         <h3>Parts used</h3>
@@ -1581,8 +1806,8 @@
         }</tbody></table>` : "";
       const notesSection = d.notes.length ? `
         <h3>Notes</h3>
-        <table><thead><tr><th style="width:4ch;">#</th><th>Note</th></tr></thead><tbody>${
-          d.notes.map((n, i) => `<tr><td>${i + 1}</td><td>${esc(n.text)}</td></tr>`).join("")
+        <table><thead><tr><th style="width:4ch;text-align:center;">#</th><th>Note</th></tr></thead><tbody>${
+          d.notes.map((n, i) => `<tr><td style="text-align:center;">${i + 1}</td><td>${esc(n.text)}</td></tr>`).join("")
         }</tbody></table>` : "";
       // Worker who did the job — take the selected option's text, since
       // that's the name shown in the dropdown (fallback to the currently
@@ -1614,7 +1839,7 @@
         ${notesSection}
         <table><thead><tr><th>Time log</th><th style="text-align:right;">${statusLabel}</th></tr></thead><tbody>${logHtml}</tbody></table>
         <div class="kv" style="margin-top:8px;">
-          <div>Total time: <b>${total || "—"}</b></div>
+          <div>Total time: ${totalLine}</div>
           <div>Work completed by: <b>${esc(workerName) || "—"}</b></div>
         </div>
       `;
@@ -1639,10 +1864,9 @@
         for (const it of items) {
           const r = await fetch(`/api/cars/${encodeURIComponent(plate)}/jobs/${encodeURIComponent(it.name)}`);
           const doc = await r.json();
-          // Any status past "work_done" means the mechanic has committed to
-          // the part numbers used — safe to pull them into autofill history.
-          // Legacy "finished" is treated as "closed" for backward compat.
-          if (!["work_done", "closed", "finished"].includes(doc.status)) continue;
+          // work_done is the terminal state — mechanic has committed to
+          // the part numbers used, safe to pull them into autofill history.
+          if (doc.status !== "work_done") continue;
           (Array.isArray(doc.parts) ? doc.parts : []).forEach(p => {
             const used = String(p.used || "").trim();
             const num = String(p.number || "").trim();
@@ -1661,7 +1885,30 @@
     }
 
     function renderGoogle() {
-      const q = [toStr(car.make), toStr(car.model), plate].filter(Boolean).join(" ").trim();
+      // The plate itself is useless for Google — it identifies THIS car,
+      // not the model. What actually helps a mechanic find an oil filter,
+      // OBD port location or forum thread is:
+      //   make + full mpmoil variant name (already includes engine code,
+      //   like "1.6 HDi 75") + registration year + fuel_type.
+      //
+      // The variant name from mpmoil often carries its own year RANGE
+      // ("Berlingo 1.6 HDi 75 2012 - 2015"). Strip that trailing range so
+      // we can substitute the specific year of THIS car — otherwise the
+      // query would read "…2012 - 2015 2015 diesel" which is noisy.
+      const variantRaw = (car && car.mpmoil_variant && car.mpmoil_variant.name) || "";
+      const variant = variantRaw.replace(/\s*\d{4}\s*[-–—]\s*\d{4}\s*$/, "").trim();
+      const modelPart = variant || toStr(car.model);
+      const year =
+        extractYearFromPlate(plate) ||
+        (car && car.mpmoil_variant && car.mpmoil_variant.year_from) ||
+        "";
+      const fuel = String((car && car.fuel_type) || "").trim().toLowerCase();
+      const fuelPart =
+        fuel && fuel !== "unknown" && fuel !== "other" ? fuel : "";
+      const q = [toStr(car.make), modelPart, year, fuelPart]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
       const el = document.getElementById("google");
       if (!q) { el.innerHTML = `<div class="muted">—</div>`; return; }
       const href = "https://www.google.com/search?q=" + encodeURIComponent(q);
@@ -1862,14 +2109,23 @@
           const data = await res.json();
           fillJob(data);
           events = Array.isArray(data.events) ? data.events : [];
-          // Normalise legacy "finished" → "closed" (jobs saved before the
-          // Work done / Close split). Files without status fall back to the
-          // legacy boolean.
-          let s = data.status || (data.finished ? "finished" : "open");
-          if (s === "finished") s = "closed";
+          // Normalise legacy statuses. Both "finished" and "closed" from
+          // before the merge fold into "work_done" — from now on that is
+          // the single terminal state. Files without status fall back to
+          // the legacy boolean.
+          let s = data.status || (data.finished ? "work_done" : "open");
+          if (s === "finished" || s === "closed") s = "work_done";
           status = s;
+          workDoneMs = Number(data.work_done_ms) || 0;
           savedWorkerId = data.worker_id || "";
-          if (status === "closed") lockUI(); else updateStatusUI();
+          // Frozen documents get their inputs disabled up-front so the
+          // read-only look is instant. isWorkDoneToday reads workDoneMs
+          // set above.
+          if (status === "work_done" && !isWorkDoneToday()) {
+            lockUI();
+          } else {
+            updateStatusUI();
+          }
         } catch (e) { setStatus("Error loading job: " + e.message, "err"); fillJob({}); }
       } else {
         fillJob({}); // new job: now() + one empty row each
@@ -1886,6 +2142,98 @@
     document.getElementById("plate-input").addEventListener("keydown", (e) => {
       if (e.key === "Enter") document.getElementById("plate-open").click();
     });
+
+    // ---------- voice-to-text mic for the Notes card ----------
+    // Uses the browser's built-in Web Speech API (Chrome/Edge/Safari). No
+    // API key, no external call from the server. Language comes from
+    // settings.json (voice_input_lang) and can be changed in Settings →
+    // Voice input. Firefox needs media.webspeech.recognition.enable turned
+    // on manually, so we gracefully disable the button when the API isn't
+    // available rather than throwing.
+    (function wireNotesMic() {
+      const btn = document.getElementById("notes-mic");
+      if (!btn) return;
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        btn.disabled = true;
+        btn.title = "Voice input isn't available in this browser (try Chrome, Edge or Safari)";
+        return;
+      }
+      let rec = null;
+      let langCached = "en-US";
+      // Fetch the language once. If the settings call fails we keep the
+      // en-US default — dictation still works, just in the wrong language,
+      // which is the least bad failure mode.
+      fetch("/api/settings")
+        .then(r => r.ok ? r.json() : null)
+        .then(s => { if (s && s.voice_input_lang) langCached = s.voice_input_lang; })
+        .catch(() => {});
+
+      // Pick the textarea we'll stream into. Preference order:
+      //   1. Whatever note textarea currently has focus (mid-typing user).
+      //   2. The trailing empty auto-slot at the end of notes-body.
+      //   3. Whatever last note textarea exists.
+      // After we append, normalizeAutoRows("notes") makes sure a fresh
+      // empty add-slot follows the row we just wrote into.
+      function pickTarget() {
+        const active = document.activeElement;
+        if (active && active.classList && active.classList.contains("nt")
+            && active.closest("#notes-body")) return active;
+        const all = document.querySelectorAll("#notes-body .nt");
+        for (let i = all.length - 1; i >= 0; i--) {
+          if (!all[i].value.trim()) return all[i];
+        }
+        return all[all.length - 1] || null;
+      }
+
+      function stopMic() { if (rec) { try { rec.stop(); } catch (_) {} } }
+
+      btn.addEventListener("click", () => {
+        if (rec) { stopMic(); return; }
+        const target = pickTarget();
+        if (!target) {
+          setStatus("No note field to write into.", "err");
+          return;
+        }
+        rec = new SR();
+        rec.lang = langCached || "en-US";
+        rec.continuous = true;
+        rec.interimResults = false;   // only commit final chunks — simpler
+        rec.onresult = (ev) => {
+          let piece = "";
+          for (let i = ev.resultIndex; i < ev.results.length; i++) {
+            const r = ev.results[i];
+            if (r.isFinal) piece += r[0].transcript + " ";
+          }
+          if (!piece) return;
+          const sep = target.value && !/\s$/.test(target.value) ? " " : "";
+          target.value = target.value + sep + piece;
+          // Let the auto-row machinery know the row now has content, so a
+          // new empty slot appears below.
+          if (typeof normalizeAutoRows === "function") normalizeAutoRows("notes");
+        };
+        rec.onerror = (ev) => {
+          // "no-speech" fires on silence timeout — that's an idle end, not
+          // a real error, so we don't shove a red banner at the user for it.
+          if (ev.error && ev.error !== "no-speech" && ev.error !== "aborted") {
+            setStatus("Voice input error: " + ev.error, "err");
+          }
+        };
+        rec.onend = () => {
+          rec = null;
+          btn.classList.remove("on");
+          btn.title = "Dictate a note (Web Speech API)";
+        };
+        btn.classList.add("on");
+        btn.title = "Listening — tap to stop";
+        try { rec.start(); }
+        catch (e) {
+          rec = null;
+          btn.classList.remove("on");
+          setStatus("Could not start voice input: " + e.message, "err");
+        }
+      });
+    })();
 
     init();
   </script>

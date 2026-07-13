@@ -70,6 +70,7 @@
   <script src="/overlay.js"></script>
   <script src="/auth.js"></script>
   <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
 </head>
 
 <body>
@@ -183,6 +184,7 @@
     document.getElementById("screensaver_bg_color").addEventListener("input", syncBgPreview);
 
     document.getElementById("save-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("save-btn");
       const body = {
         company_name: document.getElementById("company_name").value.trim(),
         company_phone: document.getElementById("company_phone").value.trim(),
@@ -196,9 +198,9 @@
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(await res.text());
-        toast("ok", "Saved.");
-      } catch (e) {
-        toast("err", "Save failed: " + e.message);
+        flashSaveStatus(btn, "ok");
+      } catch (_) {
+        flashSaveStatus(btn, "err");
       }
     });
 

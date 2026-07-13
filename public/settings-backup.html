@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Backup - Settings - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 20px; margin-bottom: 16px;
+    }
+    .card h2 {
+      margin: 0 0 14px; font-size: 1.1rem; color: #3275ac;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .card h2 .pill {
+      font-size: 10px; padding: 2px 8px; border-radius: 10px;
+      font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .card h2 .pill.stub  { background: #fef8d5; color: #6b5205; border: 1px solid #d3b634; }
+    .card h2 .pill.ready { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+    .field label { font-size: 12px; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+    .field input[type=text], .field input[type=file], .field select {
+      font-family: inherit; font-size: 14px;
+      padding: 8px 10px; border: 1px solid #bbb; border-radius: 4px;
+      max-width: 480px;
+    }
+    .field select { max-width: 240px; }
+    .field input:disabled, .field select:disabled {
+      background: #eee; color: #666; cursor: not-allowed;
+    }
+    .toggle {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 14px; margin-bottom: 12px; cursor: pointer;
+    }
+    .toggle input { width: 18px; height: 18px; }
+
+    .actions { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    button {
+      font-family: inherit; padding: 10px 18px;
+      border: 1px solid #3275ac; border-radius: 4px;
+      cursor: pointer; font-size: 14px; background: #fff;
+      color: #3275ac;
+    }
+    button.primary { background: #3275ac; color: #fff; }
+    button.primary:hover { opacity: 0.9; }
+    button.big {
+      padding: 14px 22px; font-size: 15px; font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    button.danger { border-color: #c33; color: #c33; background: #fff; }
+    button.danger:hover { background: #fbe6e6; }
+    button:disabled {
+      opacity: 0.5; cursor: not-allowed;
+    }
+
+    .help {
+      font-size: 12px; color: #666; margin: 8px 0 0;
+      background: #f5f5f5; padding: 10px; border-radius: 4px;
+      border-left: 3px solid #3275ac;
+      line-height: 1.5;
+    }
+    .warn {
+      font-size: 13px; color: #8a5a10;
+      background: #fdf2d5; padding: 10px; border-radius: 4px;
+      border-left: 3px solid #d68b18;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    .toast {
+      padding: 10px 14px; border-radius: 6px;
+      margin-bottom: 12px; font-size: 13px;
+    }
+    .toast.ok  { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+    .toast.err { background: #fbe6e6; color: #8b1a1a; border: 1px solid #c0392b; }
+
+    .stat-line {
+      font-size: 13px; color: #444;
+      display: flex; gap: 10px; flex-wrap: wrap;
+      margin: 6px 0 14px;
+    }
+    .stat-line b { color: #111; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/settings.html">&larr; Settings</a>
+    <h1>Backup</h1>
+  </div>
+
+  <div id="toast-holder"></div>
+
+  <div class="card">
+    <h2>Download backup now <span class="pill stub">planned</span></h2>
+    <div class="help" style="margin: 0 0 12px;">
+      Bundles every JSON record (cars, jobs, workers, autofill rules,
+      store items and divisions, chat feed, settings, scanner devices)
+      plus all uploaded photos into a single ZIP and offers it as a
+      download. Nothing leaves the workshop — the browser saves the file
+      to your Downloads folder.
+    </div>
+    <div class="actions">
+      <button class="primary big" id="download-btn">
+        Download backup ZIP
+      </button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Restore from file <span class="pill stub">planned</span></h2>
+    <div class="warn">
+      Restore <b>overwrites</b> current data. Take a fresh download
+      first, then pick the ZIP you want to roll back to.
+    </div>
+    <div class="field">
+      <label for="restore-file">Backup ZIP</label>
+      <input type="file" id="restore-file" accept=".zip" />
+    </div>
+    <div class="actions">
+      <button class="danger" id="restore-btn">Restore &amp; overwrite</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Automatic backup <span class="pill ready">preferences save</span></h2>
+    <div class="help" style="margin: 0 0 12px;">
+      When enabled, the server drops a fresh ZIP into the destination
+      folder on the chosen schedule. Point it at a USB stick, a NAS
+      share, or any local path the server process can write to. Engine
+      isn't wired yet — for now this card just remembers your choices
+      so it kicks in automatically once the scheduler ships.
+    </div>
+
+    <label class="toggle">
+      <input type="checkbox" id="auto-enabled" />
+      <span>Run scheduled backups</span>
+    </label>
+
+    <div class="field">
+      <label for="auto-dest">Destination folder (absolute path)</label>
+      <input type="text" id="auto-dest"
+             placeholder="e.g. D:\Backups\garage or /mnt/nas/garage" />
+    </div>
+
+    <div class="field">
+      <label for="auto-schedule">Schedule</label>
+      <select id="auto-schedule">
+        <option value="hourly">Every hour</option>
+        <option value="daily" selected>Once a day (overnight)</option>
+        <option value="weekly">Once a week (Sunday overnight)</option>
+      </select>
+    </div>
+
+    <div class="stat-line">
+      <span>Last backup:</span>
+      <b id="last-backup">never</b>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="save-btn">Save preferences</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Cloud backup <span class="pill stub">later</span></h2>
+    <div class="help" style="margin: 0 0 12px;">
+      Optional off-site copy. Would upload the same ZIP to a personal
+      Google Drive, Dropbox, or S3-compatible bucket right after each
+      local snapshot. Requires an account link + OAuth flow, which is
+      why it lives behind a separate provider stub.
+    </div>
+    <div class="field">
+      <label for="cloud-provider">Provider</label>
+      <select id="cloud-provider" disabled>
+        <option>Google Drive — coming later</option>
+        <option>Dropbox — coming later</option>
+        <option>S3 / MinIO — coming later</option>
+      </select>
+    </div>
+    <div class="actions">
+      <button disabled>Connect account</button>
+    </div>
+  </div>
+
+  <script>
+    const toastHolder = document.getElementById("toast-holder");
+    function toast(kind, msg) {
+      const t = document.createElement("div");
+      t.className = "toast " + kind;
+      t.textContent = msg;
+      toastHolder.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
+    function fmtDate(ms) {
+      if (!ms) return "never";
+      try {
+        return new Date(Number(ms)).toLocaleString();
+      } catch (_) { return "never"; }
+    }
+
+    async function load() {
+      try {
+        const res = await fetch("/api/settings");
+        const s = await res.json();
+        document.getElementById("auto-enabled").checked =
+          !!s.backup_auto_enabled;
+        document.getElementById("auto-dest").value =
+          s.backup_auto_destination || "";
+        document.getElementById("auto-schedule").value =
+          s.backup_auto_schedule || "daily";
+        document.getElementById("last-backup").textContent =
+          fmtDate(s.backup_last_ms);
+      } catch (e) {
+        toast("err", "Could not load settings: " + e.message);
+      }
+    }
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("save-btn");
+      const body = {
+        backup_auto_enabled:
+          document.getElementById("auto-enabled").checked,
+        backup_auto_destination:
+          document.getElementById("auto-dest").value.trim(),
+        backup_auto_schedule:
+          document.getElementById("auto-schedule").value || "daily",
+      };
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaveStatus(btn, "ok");
+      } catch (_) {
+        flashSaveStatus(btn, "err");
+      }
+    });
+
+    // Download + restore engines aren't wired yet — the buttons exist so
+    // the UX flow is nailed down, but they surface a "coming soon" toast
+    // instead of hitting an endpoint that doesn't exist and returning a
+    // scary 404 to the user.
+    document.getElementById("download-btn").addEventListener("click", () => {
+      toast("ok", "Coming soon — the ZIP endpoint will land here next.");
+    });
+    document.getElementById("restore-btn").addEventListener("click", () => {
+      toast("ok", "Coming soon — restore lands together with the ZIP endpoint.");
+    });
+
+    load();
+  </script>
+</body>
+
+</html>

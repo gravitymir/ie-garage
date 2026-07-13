@@ -90,7 +90,7 @@
     }
     .drop-zone.hover { border-color: #3275ac; background: #f0f6fb; }
   </style>
-  <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/chat.js"></script>
+  <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/chat.js"></script>  <script src="/save-feedback.js"></script>
 </head>
 
 <body>
@@ -493,12 +493,9 @@
         snapshot.min_count = min;
         snapshot.name = nameForChat;
 
-        itemStatus.textContent = "Saved.";
-        itemStatus.className = "status ok";
-        setTimeout(() => { itemStatus.textContent = ""; }, 1500);
-      } catch (e) {
-        itemStatus.textContent = "Error: " + e.message;
-        itemStatus.className = "status err";
+        flashSaveStatus(document.getElementById("save-btn"), "ok");
+      } catch (_) {
+        flashSaveStatus(document.getElementById("save-btn"), "err");
       } finally {
         hideOverlay();
       }

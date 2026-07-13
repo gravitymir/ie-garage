@@ -61,11 +61,22 @@
       font-size: 2em; font-weight: 900;
       display: inline-block; vertical-align: middle;
       line-height: 1; margin-right: 4px;
+      min-width: 48px; text-align: center;
     }
-    .st-fin { color: #2a7;    }   /* Closed / legacy Finished — green check */
-    .st-wd  { color: #b58c00; }   /* Work done — yellow check (mechanic done, not delivered) */
+    .st-wd  { color: #2a7;    }   /* Work done — double green check (terminal) */
+    .st-fin { color: #2a7;    }   /* Legacy Closed/Finished — same double green */
     .st-pau { color: #c80;    }   /* Paused — orange */
     .st-op  { color: #3275ac; }   /* Open — blue dot */
+    /* Sequential job number — same big plain digit as on /car.html,
+       no chip, no hash. Extracted from the file name
+       (e.g. "11LK3781_3.json" → 3). */
+    .jobno {
+      display: inline-block; vertical-align: middle;
+      font-family: inherit; font-weight: 700; font-size: 1.7em;
+      color: #555;
+      min-width: 2ch; text-align: center;
+      margin-right: 8px; margin-left: 4px;
+    }
     .vehicle-cell { font-size: 12px; }
     .vehicle-cell .mk    { color: #555; }
     .vehicle-cell .md    { color: #111; font-weight: 600; margin-left: 4px; }
@@ -171,13 +182,13 @@
     }
 
     function statusBadge(s) {
-      // Legacy "finished" from before the Work done / Close split is treated
-      // as "closed". work_done gets its own yellow ✓ so QC can spot jobs
-      // waiting for delivery.
+      // Work done is now the single terminal state — double green ✓✓.
+      // Legacy "closed" / "finished" from jobs saved before the merge
+      // render identically so historical rows keep the same icon.
       switch (String(s || "").toLowerCase()) {
+        case "work_done":
         case "closed":
-        case "finished": return `<span class="st-fin" title="Closed">✓✓</span>`;
-        case "work_done":return `<span class="st-wd"  title="Work done — awaiting delivery">✓</span>`;
+        case "finished": return `<span class="st-wd"  title="Work done">✓✓</span>`;
         case "paused":   return `<span class="st-pau" title="Paused">⏸</span>`;
         case "open":     return `<span class="st-op"  title="Open">●</span>`;
         default:         return "";
@@ -236,8 +247,13 @@
           const meta = window.fuelTypeMeta(fuel);
           vehicleHtml += ` <span class="fuel-badge" style="color:${meta.color};background:${meta.bg};border-color:${meta.color};">${esc(meta.label)}</span>`;
         }
+        // Sequential job number for this car — extracted from the file
+        // name ({plate}_{N}.json → N). Falls back to "?" for any weird
+        // legacy name; shouldn't happen after the unified rename.
+        const m = String(it.name || "").match(/_(\d+)\.json$/i);
+        const jobNoStr = m ? m[1] : "?";
         tr.innerHTML = `
-          <td class="col-last">${statusBadge(it.status)} ${fmt(lastMs)}</td>
+          <td class="col-last">${statusBadge(it.status)} <span class="jobno">${jobNoStr}</span> ${fmt(lastMs)}</td>
           <td class="plate col-plate">${it.plate || ""}</td>
           <td class="vehicle-cell">${vehicleHtml}</td>
           <td>${it.worker_name || ""}</td>

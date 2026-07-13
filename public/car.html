@@ -33,6 +33,23 @@
       border: 1px solid;
     }
     .fuel-badge.visible { display: inline-block; }
+    /* Gearbox badge — sits right of the fuel badge in the header. Muted
+       neutral colour so it doesn't compete visually with the fuel chip
+       (fuel is the "hot" attribute — determines oil grade — gearbox is
+       secondary info). */
+    .gearbox-badge {
+      display: none;
+      padding: 6px 14px;
+      font-size: 1.05rem;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      border-radius: 6px;
+      border: 1px solid #888;
+      color: #444;
+      background: #f0f0f0;
+      text-transform: uppercase;
+    }
+    .gearbox-badge.visible { display: inline-block; }
     a.home, a.subpage {
       text-decoration: none; color: #3275ac; font-weight: 600;
     }
@@ -58,6 +75,36 @@
       padding: 14px;
     }
     .card h2 { margin: 0 0 10px; font-size: 1rem; color: #555; }
+    /* Same h2-row / mic-btn pattern as job.html so the Notes textarea on
+       this page gets an identical voice-to-text control. Keeping the CSS
+       inline instead of extracting to a shared file to match the rest of
+       car.html's self-contained style block. */
+    .card .h2-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; margin: 0 0 10px;
+    }
+    .card .h2-row h2 { margin: 0; }
+    .mic-btn {
+      width: 32px; height: 32px; padding: 0;
+      border: 1px solid #bbb; border-radius: 50%;
+      background: #fff; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #555; flex: 0 0 auto;
+    }
+    .mic-btn:hover { border-color: #3275ac; color: #3275ac; }
+    .mic-btn.on {
+      background: #c33; color: #fff; border-color: #c33;
+      animation: mic-pulse 1.2s infinite;
+    }
+    .mic-btn:disabled {
+      opacity: 0.4; cursor: not-allowed;
+      border-color: #ccc; color: #999;
+    }
+    .mic-btn svg { width: 18px; height: 18px; display: block; }
+    @keyframes mic-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(204,51,51,0.6); }
+      50%      { box-shadow: 0 0 0 8px rgba(204,51,51,0); }
+    }
     .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
     .field label { font-size: 12px; color: #555; }
     input[type="text"], input[type="tel"], input[type="number"], textarea, select {
@@ -67,6 +114,13 @@
     select { height: 32px; background-color: #fff; }
     textarea { min-height: 60px; resize: vertical; }
     input[readonly] { background: #f0f0f0; color: #555; cursor: default; }
+    /* Highlight the VIN field when its contents can't be a legal VIN
+       (wrong chars, wrong length). Save button is also blocked while
+       this is on — see checkDirty(). */
+    input.invalid {
+      background: #fdecec !important;
+      border-color: #c33 !important;
+    }
     button.btn-disabled { opacity: 0.45; cursor: not-allowed; }
     button.btn-disabled:hover { opacity: 0.45; }
     .row-btns { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
@@ -88,18 +142,30 @@
        column, so both text lines line up cleanly to the right of the badge
        (instead of the description wrapping under it). Colours mirror the
        global jobs list on /jobs.html so a mechanic sees the same code
-       everywhere: ● Open (blue) · ⏸ Paused (orange) · ✓ Work done (yellow)
-       · ✓ Closed (green). */
+       everywhere: ● Open (blue) · ⏸ Paused (orange) · ✓✓ Work done (green,
+       terminal). Legacy Closed / Finished render as the same double green
+       so historical rows keep the same icon. */
     .item .st {
       flex: 0 0 auto;
       font-weight: 900; font-size: 1.9em; line-height: 1;
-      min-width: 28px; text-align: center;
+      min-width: 48px; text-align: center;
       align-self: center;
     }
     .item .st-op  { color: #3275ac; }
     .item .st-pau { color: #c80;    }
-    .item .st-wd  { color: #b58c00; }
+    .item .st-wd  { color: #2a7;    }
     .item .st-fin { color: #2a7;    }
+    /* Sequential job number — extracted from the file name
+       (e.g. "11LK3781_3.json" → 3). Big plain digit, no chip or hash,
+       aligned into its own column so 1-digit and 2-digit numbers
+       don't push the description around. */
+    .item .jobno {
+      flex: 0 0 auto;
+      font-family: inherit; font-weight: 700; font-size: 1.7rem;
+      color: #555;
+      align-self: center;
+      min-width: 2ch; text-align: center;
+    }
 
     .muted { color: #666; font-size: 12px; }
     .status { font-size: 13px; color: #555; margin: 6px 0; }
@@ -167,7 +233,7 @@
     .oil-item.open .body { display: block; }
     .oil-item pre { background: #fff; border: 1px solid #eee; padding: 6px; max-height: 240px; overflow: auto; font-size: 11px; }
   </style>
-  <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/fuel-detect.js"></script>  <script src="/chat.js"></script>
+  <script src="/overlay.js"></script>  <script src="/auth.js"></script>  <script src="/fuel-detect.js"></script>  <script src="/chat.js"></script>  <script src="/save-feedback.js"></script>
 </head>
 
 <body>
@@ -177,6 +243,7 @@
       <a href="/cars.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; All Cars</a>
       <h1>Car: <span class="plate" id="title-plate"></span></h1>
       <span id="fuel-badge" class="fuel-badge"></span>
+      <span id="gearbox-badge" class="gearbox-badge" title="Gearbox"></span>
     </div>
   </div>
 
@@ -257,6 +324,17 @@
         </select>
       </div>
       <div class="field">
+        <label>Gearbox</label>
+        <select id="gearbox">
+          <option value="unknown">Unknown</option>
+          <option value="manual">Manual</option>
+          <option value="automatic">Automatic</option>
+          <option value="semi-automatic">Semi-automatic</option>
+          <option value="cvt">CVT</option>
+          <option value="e-cvt">e-CVT</option>
+        </select>
+      </div>
+      <div class="field">
         <label>VIN</label>
         <input type="text" id="vin" maxlength="17" placeholder="17 chars (no I, O, Q)" />
       </div>
@@ -297,7 +375,20 @@
            vehicle fields on the left. Textarea id / EDITABLE hookup /
            save-payload are untouched — only the DOM position moved. -->
       <div class="card">
-        <h2>Notes</h2>
+        <div class="h2-row">
+          <h2>Notes</h2>
+          <button type="button" id="notes-mic" class="mic-btn"
+                  title="Dictate a note (Web Speech API)"
+                  aria-label="Dictate a note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="2" width="6" height="12" rx="3"/>
+              <path d="M5 10a7 7 0 0 0 14 0"/>
+              <line x1="12" y1="19" x2="12" y2="22"/>
+              <line x1="8"  y1="22" x2="16" y2="22"/>
+            </svg>
+          </button>
+        </div>
         <textarea id="notes" style="width:100%; min-height:100px; resize:vertical;"></textarea>
       </div>
 
@@ -472,7 +563,7 @@
 
     // --- Vehicle Info: show Save only when an editable field changed ---
     const EDITABLE = [
-      "customer_name", "customer_phone", "notes", "vin", "pin", "fuel_type",
+      "customer_name", "customer_phone", "notes", "vin", "pin", "fuel_type", "gearbox",
       // Editable so JDM imports and other MPMoil-unknown cars can be filled
       // in by hand. When MPMoil knows the plate these are auto-populated on
       // create; the user is free to override them afterwards.
@@ -481,9 +572,29 @@
     ];
     let baseline = {};
     let carData = {}; // full car.json, so Save preserves mpmoil/photo fields
+
+    // VIN rules per ISO 3779: exactly 17 chars, uppercase A-Z / 0-9,
+    // with I, O and Q excluded so they can't be misread as 1, 0 or 0/9.
+    // An empty VIN is fine (field is optional) — only a non-empty
+    // malformed value counts as invalid.
+    const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/;
+    function isVinValid(raw) {
+      const v = (raw || "").trim().toUpperCase();
+      return v === "" || VIN_RE.test(v);
+    }
+    function refreshVinValidity() {
+      const el = document.getElementById("vin");
+      const ok = isVinValid(el.value);
+      el.classList.toggle("invalid", !ok);
+      return ok;
+    }
+
     function checkDirty() {
       const dirty = EDITABLE.some(id => document.getElementById(id).value !== baseline[id]);
-      document.getElementById("save-car").style.display = dirty ? "" : "none";
+      // Save is blocked whenever the VIN can't parse — otherwise a bad
+      // 17-char blob (with I/O/Q or 15 chars) would ride into car.json.
+      const vinOk = refreshVinValidity();
+      document.getElementById("save-car").style.display = (dirty && vinOk) ? "" : "none";
     }
     function snapshotBaseline() {
       baseline = {};
@@ -512,6 +623,33 @@
     // Live update of the badge as the user changes the select.
     document.getElementById("fuel_type").addEventListener("change", (e) => {
       refreshFuelBadge(e.target.value);
+    });
+
+    // Update the gearbox badge in the header (MANUAL / AUTO / SEMI-AUTO / …).
+    // "unknown" hides the badge entirely — no point cluttering the header
+    // with a "we don't know" chip. Muted grey palette so gearbox stays
+    // secondary to the fuel chip.
+    function refreshGearboxBadge(gb) {
+      const badge = document.getElementById("gearbox-badge");
+      if (!badge) return;
+      const LABELS = {
+        manual:           "MANUAL",
+        automatic:        "AUTO",
+        "semi-automatic": "SEMI-AUTO",
+        cvt:              "CVT",
+        "e-cvt":          "e-CVT",
+      };
+      const label = LABELS[String(gb || "").toLowerCase()];
+      if (!label) {
+        badge.textContent = "";
+        badge.classList.remove("visible");
+        return;
+      }
+      badge.textContent = label;
+      badge.classList.add("visible");
+    }
+    document.getElementById("gearbox").addEventListener("change", (e) => {
+      refreshGearboxBadge(e.target.value);
     });
 
     // --- Delete car is blocked while the car still has jobs ---
@@ -564,6 +702,12 @@
         if (fuelVal === "hybrid") fuelVal = "petrol-electric";
         document.getElementById("fuel_type").value = fuelVal;
         refreshFuelBadge(fuelVal);
+        // Gearbox comes either from the MPMoil-oil-archive extraction
+        // (backfilled by the migration script) or from a manual pick on
+        // this form. "unknown" is the sentinel for "we don't know yet".
+        const gearboxVal = toStr(data.gearbox) || "unknown";
+        document.getElementById("gearbox").value = gearboxVal;
+        refreshGearboxBadge(gearboxVal);
         snapshotBaseline();
         loadVariantOilDetails();
         refreshPhoto(toStr(data.photo), data.photo_updated_ms);
@@ -612,18 +756,37 @@
           list.innerHTML = `<div class="muted">No jobs yet.</div>`;
           return;
         }
-        // Same status → glyph mapping the global jobs list uses. Legacy
-        // "finished" and the new "closed" both render as the green check.
+        // Same status → glyph mapping the global jobs list uses. Work
+        // done is now the single terminal state (double green ✓✓);
+        // legacy "closed" / "finished" rows fall through to the same
+        // icon so historical entries render identically.
         const statusBadge = (s) => {
           switch (String(s || "").toLowerCase()) {
+            case "work_done":
             case "closed":
-            case "finished": return `<span class="st st-fin" title="Closed">✓✓</span>`;
-            case "work_done":return `<span class="st st-wd"  title="Work done — awaiting delivery">✓</span>`;
+            case "finished": return `<span class="st st-wd"  title="Work done">✓✓</span>`;
             case "paused":   return `<span class="st st-pau" title="Paused">⏸</span>`;
             case "open":     return `<span class="st st-op"  title="Open">●</span>`;
             default:         return "";
           }
         };
+        // Extract the sequential job number from the filename
+        // ({plate}_{N}.json → N). Falls back to "?" for any historical
+        // record whose name doesn't match — shouldn't happen after the
+        // unified rename, but keeps the row rendering safe.
+        const jobNo = (name) => {
+          const m = String(name || "").match(/_(\d+)\.json$/i);
+          return m ? m[1] : "?";
+        };
+        // Newest job on top (highest #N). The unified filename convention
+        // guarantees #N is chronological: _1 was the first Work-done, _N
+        // the latest. Anything unparseable ("?") sinks to the bottom.
+        const jobNoInt = (name) => {
+          const m = String(name || "").match(/_(\d+)\.json$/i);
+          return m ? Number(m[1]) : -1;
+        };
+        items.sort((a, b) => jobNoInt(b.name) - jobNoInt(a.name));
+
         items.forEach(j => {
           const div = document.createElement("div");
           div.className = "item";
@@ -632,11 +795,13 @@
             ? ` &middot; ${j.time_in || "?"}–${j.time_out || "?"}` : "";
           // Delete moved into the job editor itself — a bottom-of-page button
           // there, so it's harder to hit by accident from the jobs list.
-          // Badge sits OUTSIDE .name so it's a real sibling flex-item — that
-          // makes both the date link and the work-summary line up neatly to
-          // the right of it, instead of the description wrapping under it.
+          // Badges (status + jobno) sit OUTSIDE .name so they're real
+          // sibling flex-items — that makes both the date link and the
+          // work-summary line up neatly to the right of them, instead of
+          // the description wrapping under them.
           div.innerHTML = `
             ${statusBadge(j.status)}
+            <span class="jobno">${jobNo(j.name)}</span>
             <div class="name">
               <a href="/job.html?plate=${encodeURIComponent(plate)}&file=${encodeURIComponent(j.name)}">
                 ${date}${timeRange}
@@ -691,7 +856,8 @@
     }
 
     document.getElementById("save-car").addEventListener("click", async () => {
-      carStatus.textContent = "Saving...";
+      const saveBtn = document.getElementById("save-car");
+      carStatus.textContent = "";
       carStatus.className = "status";
       // Merge edits into the loaded car so mpmoil/photo/variant fields are preserved.
       // Number fields (oil_capacity) are parsed to Number so the backend
@@ -706,6 +872,7 @@
         vin: document.getElementById("vin").value.trim(),
         pin: document.getElementById("pin").value.trim(),
         fuel_type: document.getElementById("fuel_type").value,
+        gearbox: document.getElementById("gearbox").value,
         make: document.getElementById("make").value.trim(),
         model: document.getElementById("model").value.trim(),
         years: document.getElementById("years").value.trim(),
@@ -721,13 +888,14 @@
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(await res.text());
-        snapshotBaseline(); // new values become the baseline; hides Save
-        carStatus.textContent = "Saved.";
-        carStatus.className = "status ok";
-        setTimeout(() => { carStatus.textContent = ""; }, 1500);
-      } catch (e) {
-        carStatus.textContent = "Error: " + e.message;
-        carStatus.className = "status err";
+        // Success signal is intentional: the Save button disappears
+        // (snapshotBaseline sees the form is no longer dirty). No
+        // separate "Saved." status text — the vanishing button carries
+        // the same message with less visual noise. Errors use the
+        // shared button-flash instead so all pages read the same way.
+        snapshotBaseline();
+      } catch (_) {
+        flashSaveStatus(saveBtn, "err");
       } finally {
         hideOverlay();
       }
@@ -849,6 +1017,63 @@
         hideOverlay();
       }
     });
+
+    // ---------- voice-to-text mic for the Notes textarea ----------
+    // Mirrors the job.html implementation: browser Web Speech API,
+    // language from settings.voice_input_lang, appends final chunks to
+    // the textarea, second click / silence stops. Firefox without the
+    // recognition flag ends up with a disabled button.
+    (function wireCarNotesMic() {
+      const btn = document.getElementById("notes-mic");
+      const target = document.getElementById("notes");
+      if (!btn || !target) return;
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        btn.disabled = true;
+        btn.title = "Voice input isn't available in this browser (try Chrome, Edge or Safari)";
+        return;
+      }
+      let rec = null;
+      let langCached = "en-US";
+      fetch("/api/settings")
+        .then(r => r.ok ? r.json() : null)
+        .then(s => { if (s && s.voice_input_lang) langCached = s.voice_input_lang; })
+        .catch(() => {});
+
+      btn.addEventListener("click", () => {
+        if (rec) { try { rec.stop(); } catch (_) {} return; }
+        rec = new SR();
+        rec.lang = langCached || "en-US";
+        rec.continuous = true;
+        rec.interimResults = false;
+        rec.onresult = (ev) => {
+          let piece = "";
+          for (let i = ev.resultIndex; i < ev.results.length; i++) {
+            const r = ev.results[i];
+            if (r.isFinal) piece += r[0].transcript + " ";
+          }
+          if (!piece) return;
+          const sep = target.value && !/\s$/.test(target.value) ? " " : "";
+          target.value = target.value + sep + piece;
+          // Fire input so any dirty-state / autosave logic elsewhere picks
+          // it up as user-driven change instead of missing the transcript.
+          target.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        rec.onerror = () => { /* silent — no-speech/aborted are noise */ };
+        rec.onend = () => {
+          rec = null;
+          btn.classList.remove("on");
+          btn.title = "Dictate a note (Web Speech API)";
+        };
+        btn.classList.add("on");
+        btn.title = "Listening — tap to stop";
+        try { rec.start(); }
+        catch (_) {
+          rec = null;
+          btn.classList.remove("on");
+        }
+      });
+    })();
 
     loadCar();
     loadJobs();

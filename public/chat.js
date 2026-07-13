@@ -43,12 +43,41 @@
   let pollTimerId = null;    // active setInterval, whatever cadence
   let hasUnread = false;     // true when new stuff arrived while chat was closed
 
+  // Stable identity for the presence counter. Prefer the signed-in
+  // worker's id — multiple tabs from one Andrii deduplicate to one
+  // "online" tick. If nobody is signed in (auth off, or on the login
+  // screen), fall back to a per-tab random key from sessionStorage.
+  function clientId() {
+    const w = typeof window.currentWorker === "function" ? window.currentWorker() : null;
+    if (w && w.id) return "w:" + w.id;
+    let sid = null;
+    try { sid = sessionStorage.getItem("gs_client_id"); } catch (_) {}
+    if (!sid) {
+      sid = "s:" + Math.random().toString(36).slice(2, 10)
+                 + "-" + Date.now().toString(36);
+      try { sessionStorage.setItem("gs_client_id", sid); } catch (_) {}
+    }
+    return sid;
+  }
+
+  function renderOnlineCount(n) {
+    const nEl = document.querySelector("#chat-online .n");
+    if (nEl) nEl.textContent = (typeof n === "number" && n > 0) ? String(n) : "–";
+  }
+
+  function feedUrl() {
+    const qs = new URLSearchParams();
+    if (maxTsSeen) qs.set("since", String(maxTsSeen));
+    qs.set("client_id", clientId());
+    return "/api/chat/feed?" + qs.toString();
+  }
+
   async function fetchNewMessages() {
     try {
-      const url = "/api/chat/feed" + (maxTsSeen ? `?since=${maxTsSeen}` : "");
-      const res = await fetch(url);
+      const res = await fetch(feedUrl());
       if (!res.ok) return;
       const data = await res.json();
+      renderOnlineCount(data.online);
       const items = Array.isArray(data.items) ? data.items : [];
       if (!items.length) return;
       for (const it of items) {
@@ -258,13 +287,29 @@
 
       /* "You have unread" state — inverted colour scheme (white handle
          with blue text) plus a subtle vertical figure-8 shake so the tab
-         waves at the user from the corner of the eye. */
+         waves at the user from the corner of the eye, and a 2 Hz colour
+         flicker that snaps between normal and inverted so the tab
+         actively winks at the user.  The static background / color rules
+         below apply if animation is disabled by the OS (prefers-reduced-
+         motion); otherwise the invert keyframes take over. */
       #garage-chat .chat-handle.has-unread {
         background: #fff;
         color: #3275ac;
-        animation: chat-handle-shake 1.6s ease-in-out infinite;
+        animation:
+          chat-handle-shake 1.6s ease-in-out infinite,
+          chat-handle-invert 1s steps(1, end) infinite;
       }
       #garage-chat .chat-handle.has-unread:hover { background: #eef4fb; }
+
+      /* Two-state hard flip: 0-500 ms inverted (white / blue), then
+         500-1000 ms back to the normal blue-on-white palette.  steps(1)
+         easing makes each half-cycle jump instead of fade, so it reads
+         as blinking, not pulsing. */
+      @keyframes chat-handle-invert {
+        0%   { background: #fff;    color: #3275ac; }
+        50%  { background: #3275ac; color: #fff;    }
+        100% { background: #fff;    color: #3275ac; }
+      }
 
       /* Vertical infinity (∞ rotated 90°) — 8 samples around the lemniscate,
          each keyframe includes the base translateY(-50%) so the handle
@@ -295,6 +340,26 @@
         background: #3275ac; color: #fff;
       }
       .chat-head h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+      /* People-online pill centred between the title and the close X.
+         .dot is a green presence LED, .n is the count. Updated on every
+         poll response. When the count is unknown (haven't polled yet)
+         we render an em-dash so the box doesn't jump width later. */
+      .chat-head .chat-online {
+        margin: 0 auto;
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 3px 10px;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.15);
+        color: #fff; font-size: 0.85rem; font-weight: 600;
+        min-width: 3.2em; justify-content: center;
+        line-height: 1;
+      }
+      .chat-head .chat-online .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: #48d16b;
+        box-shadow: 0 0 6px #48d16b;
+      }
+      .chat-head .chat-online .n { font-variant-numeric: tabular-nums; }
       /* Close button — perfectly round, white background so the red glyph
          pops, and inline-flex centring so the × sits exactly in the middle
          of the circle regardless of the browser's default button metrics.
@@ -392,6 +457,12 @@
         color: #a07400; font-weight: 600; font-size: 11px;
         text-transform: uppercase; letter-spacing: 0.04em;
       }
+      /* Links inside event text — same blue as the rest of the app so
+         chat entries feel native, not markdown-y. */
+      .chat-item.event .ev-text a {
+        color: #3275ac; font-weight: 600; text-decoration: none;
+      }
+      .chat-item.event .ev-text a:hover { text-decoration: underline; }
 
       .chat-compose {
         border-top: 1px solid #ddd; padding: 10px; background: #fff;
@@ -464,6 +535,9 @@
       <div class="chat-panel">
         <div class="chat-head">
           <h3>Chat &amp; Events</h3>
+          <span class="chat-online" id="chat-online" title="People with the app open in the last 10 minutes">
+            <span class="dot"></span><span class="n">–</span>
+          </span>
           <button class="chat-close" id="chat-close" aria-label="Close">×</button>
         </div>
         <div class="chat-feed" id="chat-feed"></div>
@@ -540,6 +614,29 @@
     });
   }
 
+  // Tiny markdown-style [label](/path) parser for event text. Only
+  // same-site paths (must start with "/") are turned into <a> tags —
+  // anything else is escaped verbatim so a stray external URL can't be
+  // clicked into. Text outside link syntax is always HTML-escaped.
+  function formatEventText(text) {
+    const s = String(text || "");
+    const re = /\[([^\]]+)\]\(([^)]+)\)/g;
+    const out = [];
+    let last = 0, m;
+    while ((m = re.exec(s)) !== null) {
+      if (m.index > last) out.push(esc(s.slice(last, m.index)));
+      const [full, label, url] = m;
+      if (url.startsWith("/")) {
+        out.push(`<a href="${esc(url)}">${esc(label)}</a>`);
+      } else {
+        out.push(esc(full));
+      }
+      last = re.lastIndex;
+    }
+    if (last < s.length) out.push(esc(s.slice(last)));
+    return out.join("");
+  }
+
   function renderItem(it) {
     const when = `<span class="when">${fmtTime(it.ts)}</span>`;
     if (it.type === "event") {
@@ -550,7 +647,7 @@
             <span class="ico">${meta.icon}</span>
             <div class="ev-text">
               <div><span class="ev-kind">${esc(meta.label)}</span> ${when}</div>
-              <div>${esc(it.text)}</div>
+              <div>${formatEventText(it.text)}</div>
             </div>
           </div>
         </div>`;
@@ -792,9 +889,13 @@
     // the very first background poll would flag EVERY message as "new".
     (async () => {
       try {
-        const res = await fetch("/api/chat/feed");
+        // Same URL builder as regular polls — this baseline fetch also
+        // counts as an "I'm here" ping so the online tile is populated
+        // before the first poll interval fires.
+        const res = await fetch(feedUrl());
         if (res.ok) {
           const data = await res.json();
+          renderOnlineCount(data.online);
           const items = Array.isArray(data.items) ? data.items : [];
           maxTsSeen = items.reduce((m, it) => Math.max(m, Number(it.ts) || 0), 0);
         }

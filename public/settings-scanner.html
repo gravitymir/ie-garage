@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Scanner - Settings - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 20px; margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 14px; font-size: 1.1rem; color: #3275ac; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+    .field label { font-size: 12px; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+    .field input[type=number], .field select {
+      font-family: inherit; font-size: 14px;
+      padding: 8px 10px; border: 1px solid #bbb; border-radius: 4px;
+      max-width: 260px;
+    }
+    .actions { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    button {
+      font-family: inherit; padding: 10px 18px;
+      border: 1px solid #3275ac; border-radius: 4px;
+      cursor: pointer; font-size: 14px; background: #fff;
+      color: #3275ac;
+    }
+    button.primary { background: #3275ac; color: #fff; }
+    button.primary:hover { opacity: 0.9; }
+    button.danger { border-color: #c33; color: #c33; }
+    button.danger:hover { background: #fbe6e6; }
+    button.small { padding: 5px 10px; font-size: 12px; }
+    .help {
+      font-size: 12px; color: #666; margin: 8px 0 0;
+      background: #f5f5f5; padding: 10px; border-radius: 4px;
+      border-left: 3px solid #3275ac;
+    }
+    .toast {
+      padding: 10px 14px; border-radius: 6px;
+      margin-bottom: 12px; font-size: 13px;
+    }
+    .toast.ok  { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+    .toast.err { background: #fbe6e6; color: #8b1a1a; border: 1px solid #c0392b; }
+
+    /* Pairing QR panel */
+    .pair-box {
+      display: none; align-items: flex-start; gap: 20px;
+      padding: 16px; background: #fafafa; border: 1px dashed #bbb;
+      border-radius: 6px; margin-top: 12px; flex-wrap: wrap;
+    }
+    .pair-box.on { display: flex; }
+    .pair-qr {
+      background: #fff; padding: 8px; border-radius: 6px;
+      border: 1px solid #ddd; line-height: 0;
+    }
+    .pair-qr img { width: 240px; height: 240px; display: block; }
+    .pair-info { flex: 1 1 260px; min-width: 260px; }
+    .pair-info h3 { margin: 0 0 6px; font-size: 1rem; }
+    .pair-info .status {
+      font-size: 13px; padding: 6px 10px; border-radius: 4px;
+      background: #fef8d5; border: 1px solid #d3b634; color: #6b5205;
+      display: inline-block; margin-bottom: 10px;
+    }
+    .pair-info .status.paired {
+      background: #dff2df; border-color: #1a7a1a; color: #1a5d1a;
+    }
+    .pair-info .status.expired {
+      background: #fbe6e6; border-color: #c33; color: #8b1a1a;
+    }
+    .pair-info .expires {
+      font-size: 12px; color: #555; margin: 4px 0 12px;
+    }
+    .pair-info .payload-note {
+      font-size: 11px; color: #888; margin-top: 12px;
+      line-height: 1.5;
+    }
+
+    /* Device list */
+    table.devs {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    table.devs th, table.devs td {
+      text-align: left; padding: 8px 10px;
+      border-bottom: 1px solid #eee; vertical-align: middle;
+    }
+    table.devs th {
+      font-weight: 600; color: #555; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      background: #fafafa;
+    }
+    table.devs td.name { font-weight: 600; }
+    .empty {
+      color: #888; text-align: center; padding: 20px;
+      font-size: 13px; font-style: italic;
+    }
+    .code-chip {
+      font-family: inherit; background: #f0f0f0;
+      padding: 2px 6px; border-radius: 3px; font-size: 12px;
+    }
+    .scan-type {
+      display: inline-block; font-size: 10px; padding: 2px 6px;
+      border-radius: 10px; background: #e8f0f7; color: #3275ac;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .scan-type.vin { background: #fdf2d5; color: #8a5a10; }
+    .scan-type.part_number, .scan-type.part { background: #e6f4e6; color: #1a5d1a; }
+    .scan-type.qr { background: #efe6f7; color: #5c318b; }
+    .scan-type.barcode, .scan-type.barcode_ean13 { background: #e8f0f7; color: #3275ac; }
+    .scan-type.text { background: #f0f0f0; color: #555; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/settings.html">&larr; Settings</a>
+    <h1>Scanner</h1>
+  </div>
+
+  <div id="toast-holder"></div>
+
+  <div class="card">
+    <h2>Pair a phone</h2>
+    <div class="help" style="margin: 0 0 12px;">
+      Point the companion app's camera at the QR code below. Once the phone
+      registers, it appears in the list further down and can start sending
+      scans immediately.
+    </div>
+    <div class="actions">
+      <button class="primary" id="pair-btn">Generate pairing QR</button>
+      <button id="cancel-pair-btn" style="display:none;">Cancel</button>
+    </div>
+
+    <div id="pair-box" class="pair-box">
+      <div class="pair-qr">
+        <img id="pair-qr-img" alt="pairing QR" />
+      </div>
+      <div class="pair-info">
+        <h3>Waiting for the phone…</h3>
+        <div class="status" id="pair-status">Waiting</div>
+        <div class="expires" id="pair-expires"></div>
+        <div class="payload-note" id="payload-note"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Paired devices</h2>
+    <div id="devices-holder">
+      <div class="empty">Loading…</div>
+    </div>
+    <div class="actions">
+      <button class="small" id="refresh-devices">Refresh</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Scanner config</h2>
+
+    <div class="field">
+      <label for="ttl_minutes">Pairing QR valid for (minutes)</label>
+      <input type="number" id="ttl_minutes" min="1" step="1" value="10" />
+    </div>
+
+    <div class="field">
+      <label for="default_division">Default division for phone scans</label>
+      <select id="default_division">
+        <option value="">(none — leave uncategorized)</option>
+      </select>
+    </div>
+
+    <div class="help">
+      When a scan arrives without a division hint, the stocktake queue drops
+      it into the default division so you know where to look. Change any
+      time — it only applies to new scans.
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="save-btn">Save</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Recent scans</h2>
+    <div id="scans-holder">
+      <div class="empty">Loading…</div>
+    </div>
+    <div class="actions">
+      <button class="small" id="refresh-scans">Refresh</button>
+    </div>
+  </div>
+
+  <script>
+    const toastHolder = document.getElementById("toast-holder");
+    function toast(kind, msg) {
+      const t = document.createElement("div");
+      t.className = "toast " + kind;
+      t.textContent = msg;
+      toastHolder.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
+    // ---------- settings load / save ----------
+
+    async function loadSettings() {
+      try {
+        const [sRes, dRes] = await Promise.all([
+          fetch("/api/settings"),
+          fetch("/api/store/divisions"),
+        ]);
+        const s = await sRes.json();
+        const ttl = Number(s.scanner_pair_ttl_minutes);
+        document.getElementById("ttl_minutes").value =
+          Number.isFinite(ttl) && ttl > 0 ? ttl : 10;
+
+        const sel = document.getElementById("default_division");
+        // Keep the "(none)" default option; append fetched divisions.
+        if (dRes.ok) {
+          const data = await dRes.json();
+          (data.items || []).forEach((d) => {
+            const o = document.createElement("option");
+            o.value = d.id || "";
+            o.textContent = d.name || d.id || "(unnamed)";
+            sel.appendChild(o);
+          });
+        }
+        sel.value = s.scanner_default_division || "";
+      } catch (e) {
+        toast("err", "Could not load settings: " + e.message);
+      }
+    }
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("save-btn");
+      const body = {
+        scanner_pair_ttl_minutes: Math.max(
+          1,
+          Number(document.getElementById("ttl_minutes").value) || 10
+        ),
+        scanner_default_division:
+          document.getElementById("default_division").value || "",
+      };
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaveStatus(btn, "ok");
+      } catch (_) {
+        flashSaveStatus(btn, "err");
+      }
+    });
+
+    // ---------- pairing ----------
+
+    let pollTimer = null;
+    let expiryTimer = null;
+    let currentPairToken = null;
+    let pairExpiresMs = 0;
+
+    function fmtRemaining(ms) {
+      if (ms <= 0) return "expired";
+      const s = Math.round(ms / 1000);
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return m > 0 ? `${m}m ${r}s` : `${r}s`;
+    }
+
+    function updateExpiryLabel() {
+      const el = document.getElementById("pair-expires");
+      if (!pairExpiresMs) { el.textContent = ""; return; }
+      const remain = pairExpiresMs - Date.now();
+      el.textContent = "QR expires in " + fmtRemaining(remain);
+    }
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (expiryTimer) { clearInterval(expiryTimer); expiryTimer = null; }
+    }
+
+    async function pollPairStatus() {
+      if (!currentPairToken) return;
+      try {
+        const res = await fetch(`/api/scanner/pair/${currentPairToken}/status`);
+        const s = await res.json();
+        const st = document.getElementById("pair-status");
+        if (s.status === "paired") {
+          st.textContent = "Paired ✓  " + ((s.device && s.device.name) || "");
+          st.className = "status paired";
+          stopPolling();
+          currentPairToken = null;
+          toast("ok", "Device paired.");
+          await loadDevices();
+          setTimeout(closePairBox, 1500);
+        } else if (s.status === "expired") {
+          st.textContent = "Expired — generate a new QR";
+          st.className = "status expired";
+          stopPolling();
+          currentPairToken = null;
+        } else {
+          st.textContent = "Waiting…";
+          st.className = "status";
+        }
+      } catch (e) {
+        // Quiet — polling errors shouldn't spam toasts.
+      }
+      updateExpiryLabel();
+    }
+
+    function closePairBox() {
+      stopPolling();
+      currentPairToken = null;
+      pairExpiresMs = 0;
+      document.getElementById("pair-box").classList.remove("on");
+      document.getElementById("cancel-pair-btn").style.display = "none";
+      document.getElementById("pair-btn").disabled = false;
+    }
+
+    document.getElementById("pair-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("pair-btn");
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/scanner/pair", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ server_url: window.location.origin }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        currentPairToken = data.token;
+        pairExpiresMs = Number(data.expires_ms) || 0;
+        // Cache-buster so a fresh img reload after cancel/regenerate
+        // doesn't use a stale QR from another token.
+        document.getElementById("pair-qr-img").src =
+          data.qr_url + "?_=" + Date.now();
+        const note = document.getElementById("payload-note");
+        note.textContent =
+          "QR payload: JSON { server: \"" + window.location.origin +
+          "\", token: \"" + data.token.substring(0, 8) + "…\" }. " +
+          "The companion Android app decodes this and calls " +
+          "/api/scanner/register. Nothing sensitive leaves this network.";
+        document.getElementById("pair-box").classList.add("on");
+        document.getElementById("cancel-pair-btn").style.display = "";
+        stopPolling();
+        updateExpiryLabel();
+        pollTimer = setInterval(pollPairStatus, 2000);
+        // Countdown label refresh runs on its own timer so we can stop it
+        // independently on cancel/paired without also killing the poller.
+        expiryTimer = setInterval(updateExpiryLabel, 1000);
+      } catch (e) {
+        btn.disabled = false;
+        toast("err", "Could not start pairing: " + e.message);
+      }
+    });
+
+    document.getElementById("cancel-pair-btn").addEventListener("click", closePairBox);
+
+    // ---------- devices ----------
+
+    function fmtSince(ms) {
+      if (!ms) return "never";
+      const d = Date.now() - Number(ms);
+      if (d < 60_000) return "just now";
+      if (d < 3600_000) return Math.round(d / 60_000) + " min ago";
+      if (d < 86_400_000) return Math.round(d / 3600_000) + " h ago";
+      return Math.round(d / 86_400_000) + " d ago";
+    }
+
+    function fmtDate(ms) {
+      if (!ms) return "";
+      try {
+        return new Date(Number(ms)).toLocaleString();
+      } catch (_) { return ""; }
+    }
+
+    async function loadDevices() {
+      const holder = document.getElementById("devices-holder");
+      try {
+        const res = await fetch("/api/scanner/devices");
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const items = data.items || [];
+        if (!items.length) {
+          holder.innerHTML =
+            `<div class="empty">No paired devices yet. Use the QR above.</div>`;
+          return;
+        }
+        const rows = items.map((d) => `
+          <tr>
+            <td class="name">${escapeHtml(d.name || d.id)}</td>
+            <td>${escapeHtml(d.platform || "-")}</td>
+            <td>${escapeHtml(d.app_version || "-")}</td>
+            <td title="${escapeHtml(fmtDate(d.last_seen_ms))}">
+              ${escapeHtml(fmtSince(d.last_seen_ms))}
+            </td>
+            <td style="text-align:right;">
+              <button class="danger small" data-unpair="${escapeHtml(d.id)}">
+                Unpair
+              </button>
+            </td>
+          </tr>
+        `).join("");
+        holder.innerHTML = `
+          <table class="devs">
+            <thead>
+              <tr>
+                <th>Name</th><th>Platform</th><th>App version</th>
+                <th>Last seen</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+        holder.querySelectorAll("[data-unpair]").forEach((btn) => {
+          btn.addEventListener("click", () => unpairDevice(btn.getAttribute("data-unpair")));
+        });
+      } catch (e) {
+        holder.innerHTML = `<div class="empty">Error: ${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    async function unpairDevice(id) {
+      if (!confirm("Unpair this device? It will need a new pairing QR to sync again.")) return;
+      try {
+        const res = await fetch("/api/scanner/devices/" + encodeURIComponent(id), {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error(await res.text());
+        toast("ok", "Unpaired.");
+        loadDevices();
+      } catch (e) {
+        toast("err", "Unpair failed: " + e.message);
+      }
+    }
+
+    document.getElementById("refresh-devices").addEventListener("click", loadDevices);
+
+    // ---------- scans preview ----------
+
+    async function loadScans() {
+      const holder = document.getElementById("scans-holder");
+      try {
+        const res = await fetch("/api/scanner/scans?limit=20");
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const items = data.items || [];
+        if (!items.length) {
+          holder.innerHTML = `<div class="empty">No scans received yet.</div>`;
+          return;
+        }
+        const rows = items.map((s) => `
+          <tr>
+            <td><span class="code-chip">${escapeHtml(s.code || "")}</span></td>
+            <td><span class="scan-type ${escapeHtml(s.type || "text")}">${escapeHtml(s.type || "text")}</span></td>
+            <td>${escapeHtml(s.device_id || "-")}</td>
+            <td title="${escapeHtml(fmtDate(s.received_ms))}">
+              ${escapeHtml(fmtSince(s.received_ms))}
+            </td>
+          </tr>
+        `).join("");
+        holder.innerHTML = `
+          <table class="devs">
+            <thead>
+              <tr>
+                <th>Code</th><th>Type</th><th>From</th><th>Received</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      } catch (e) {
+        holder.innerHTML = `<div class="empty">Error: ${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    document.getElementById("refresh-scans").addEventListener("click", loadScans);
+
+    function escapeHtml(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    loadSettings();
+    loadDevices();
+    loadScans();
+  </script>
+</body>
+
+</html>

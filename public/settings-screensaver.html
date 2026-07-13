@@ -68,6 +68,7 @@
   <script src="/overlay.js"></script>
   <script src="/auth.js"></script>
   <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
 </head>
 
 <body>
@@ -133,6 +134,7 @@
     }
 
     document.getElementById("save-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("save-btn");
       const body = {
         screensaver_enabled: document.getElementById("enabled").checked,
         screensaver_idle_minutes: Math.max(1, Number(document.getElementById("idle_minutes").value) || 10),
@@ -144,9 +146,9 @@
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(await res.text());
-        toast("ok", "Saved.");
-      } catch (e) {
-        toast("err", "Save failed: " + e.message);
+        flashSaveStatus(btn, "ok");
+      } catch (_) {
+        flashSaveStatus(btn, "err");
       }
     });
 

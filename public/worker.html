@@ -86,6 +86,7 @@
   <script src="/overlay.js"></script>
   <script src="/auth.js"></script>
   <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
 </head>
 
 <body>
@@ -133,7 +134,7 @@
         </div>
         <div class="row2">
           <div class="field">
-            <label>Password <span id="pw-hint" style="color:#888;font-weight:normal;font-size:11px;"></span></label>
+            <label>Password <span id="pw-hint" style="color:#888;font-weight:normal;font-size:11px;">(hold the eye icon to peek)</span></label>
             <div class="pw-wrap">
               <input type="password" id="password" autocomplete="new-password" />
               <button type="button" id="pw-peek" class="pw-peek" aria-label="Hold to show password" title="Hold to show">
@@ -256,10 +257,7 @@
         document.getElementById("phone").value = toStr(worker.phone);
         document.getElementById("address").value = toStr(worker.address);
         document.getElementById("postcode").value = toStr(worker.postcode);
-        document.getElementById("password").value = "";
-        document.getElementById("pw-hint").textContent = worker.has_password
-          ? "(set — leave empty to keep, or type a new one to change)"
-          : "(not set yet)";
+        document.getElementById("password").value = toStr(worker.password);
         (Array.isArray(worker.skills) ? worker.skills : []).forEach(s => addListRow("skills", s));
         (Array.isArray(worker.documents) ? worker.documents : []).forEach(d => addListRow("docs", d));
         refreshPhoto(worker.photo, worker.photo_updated_ms);
@@ -287,6 +285,7 @@
     })();
 
     document.getElementById("save-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("save-btn");
       const body = Object.assign({}, worker, {
         first_name: document.getElementById("first_name").value.trim(),
         last_name: document.getElementById("last_name").value.trim(),
@@ -296,12 +295,8 @@
         postcode: document.getElementById("postcode").value.trim(),
         skills: collectList("skills"),
         documents: collectList("docs"),
-        // Empty string = keep existing password on the server; non-empty = update.
         password: document.getElementById("password").value,
       });
-      // The has_password marker is UI-only; don't echo it back.
-      delete body.has_password;
-      setStatus(statusEl, "Saving…");
       showOverlay("Saving…");
       try {
         let res;
@@ -324,10 +319,9 @@
           history.replaceState({}, "", u);
           applyMode();
         }
-        setStatus(statusEl, "Saved.", "ok");
-        setTimeout(() => setStatus(statusEl, ""), 1500);
-      } catch (e) {
-        setStatus(statusEl, "Error: " + e.message, "err");
+        flashSaveStatus(btn, "ok");
+      } catch (_) {
+        flashSaveStatus(btn, "err");
       } finally { hideOverlay(); }
     });
 

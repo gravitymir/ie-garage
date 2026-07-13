@@ -173,8 +173,39 @@
       color: #3275ac;
       margin-bottom: 6px;
       letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
     }
-    .mm { font-size: 0.95rem; font-weight: 600; }
+    /* Status badge sitting on the right side of the plate line — mirrors
+       the icons on /jobs.html so both pages read the same colours at a
+       glance. Hidden entirely when the car has no non-closed jobs. */
+    .plate .st {
+      font-size: 1.1rem;
+      font-weight: 900;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+    .st-fin { color: #2a7;    }   /* Legacy Closed — kept for parity, not surfaced here */
+    .st-wd  { color: #2a7;    }   /* Work done — double green check */
+    .st-pau { color: #c80;    }   /* Paused — orange */
+    .st-op  { color: #3275ac; }   /* Open — blue dot */
+    /* Model line reserves two rows even for short names — otherwise every
+       car with a single-word model ("Ford Focus") is one line shorter than
+       one with a wrapping name ("Volkswagen Tiguan Allspace"), and CSS
+       grid stretches the entire row to the tallest card, so an occasional
+       long name inflates ~6 whole cards while short-name rows stay squat.
+       Fixed two-line box → every card is the same height. */
+    .mm {
+      font-size: 0.95rem; font-weight: 600;
+      line-height: 1.25;
+      min-height: 2.5em;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
     .cust { font-size: 0.85rem; color: #555; margin-top: 4px; }
     .meta { font-size: 0.78rem; color: #888; margin-top: 8px; display: flex; justify-content: space-between; }
 
@@ -277,7 +308,7 @@
   </div>
 
   <div class="toolbar">
-    <input type="search" id="search" placeholder="Search by plate, make, model, customer..." style="flex:1; min-width:200px;" />
+    <input type="search" id="search" placeholder="Search by plate, make, model, fuel..." style="flex:1; min-width:200px;" />
   </div>
 
   <div class="muted" id="status">Loading...</div>
@@ -351,10 +382,18 @@
 
     function render() {
       const q = (searchEl.value || "").toLowerCase().trim();
+      // Multi-token search: split on whitespace and require EVERY token
+      // to appear somewhere in the car's searchable text. So "nissan 12"
+      // matches a Nissan whose plate starts with 12; "berlingo diesel"
+      // matches every Citroën Berlingo diesel; order of tokens doesn't
+      // matter. Empty query keeps everything.
+      const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
       const filtered = cars.filter(c => {
-        if (!q) return true;
-        return [c.plate, c.make, c.model, c.customer_name, c.customer_phone]
-          .some(v => String(v || "").toLowerCase().includes(q));
+        if (!tokens.length) return true;
+        const hay = [c.plate, c.make, c.model, c.customer_name, c.customer_phone, c.fuel_type]
+          .map(v => String(v || "").toLowerCase())
+          .join(" ");
+        return tokens.every(t => hay.includes(t));
       });
       grid.innerHTML = "";
       const emptyAdd = document.getElementById("empty-add");
@@ -372,6 +411,18 @@
       }
       statusEl.textContent = "";
       emptyAdd.style.display = "none";
+      // Same icon mapping as /jobs.html so both pages read consistently.
+      // The backend already suppresses fully-terminal cars — open_status
+      // is null when every job on the car is Work done / legacy Closed.
+      // Anything that does reach us here still has open work to show.
+      function openStatusBadge(s) {
+        switch (String(s || "").toLowerCase()) {
+          case "paused":    return `<span class="st st-pau" title="Paused">⏸</span>`;
+          case "open":      return `<span class="st st-op"  title="Open">●</span>`;
+          default:          return "";
+        }
+      }
+
       filtered.forEach(c => {
         const a = document.createElement("a");
         a.className = "car";
@@ -400,7 +451,10 @@
         a.innerHTML = `
           ${thumbHtml}
           <div class="info">
-            <div class="plate">${c.plate}</div>
+            <div class="plate">
+              <span>${c.plate}</span>
+              ${openStatusBadge(c.open_status)}
+            </div>
             <div class="mm">${c.make || ""} ${c.model || ""}</div>
             ${c.customer_name || c.customer_phone
               ? `<div class="cust">${c.customer_name || ""} ${c.customer_phone ? "&middot; " + c.customer_phone : ""}</div>`

@@ -30,6 +30,7 @@ autofill/
 settings/
 chat/
 database/
+scanner/
 
 # ---------- local tooling ----------
 .claude/

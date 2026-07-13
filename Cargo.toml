@@ -14,3 +14,4 @@ tower-http = { version = "0.6", features = ["cors", "fs", "set-header"] }
 urlencoding = "2"
 base64 = "0.22"
 image = "0.25"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }

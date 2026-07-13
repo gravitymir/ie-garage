@@ -150,6 +150,7 @@
   <script src="/overlay.js"></script>
   <script src="/auth.js"></script>
   <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
 </head>
 
 <body>
@@ -541,12 +542,9 @@
           window.history.replaceState({}, "", url);
           applyMode();
         }
-        statusEl.textContent = "Saved.";
-        statusEl.className = "status ok";
-        setTimeout(() => { statusEl.textContent = ""; }, 1500);
-      } catch (e) {
-        statusEl.textContent = "Error: " + e.message;
-        statusEl.className = "status err";
+        flashSaveStatus(document.getElementById("save-btn"), "ok");
+      } catch (_) {
+        flashSaveStatus(document.getElementById("save-btn"), "err");
       } finally {
         hideOverlay();
       }

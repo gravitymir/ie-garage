@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Work hours - Settings - Cleere Auto Services</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;900&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", monospace;
+      margin: 0; padding: 20px;
+      color: #111; background: #f5f5f5;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    a.home {
+      text-decoration: none; color: #3275ac; font-weight: 600;
+      padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
+    }
+    .card {
+      background: #fff; border: 1px solid #ccc; border-radius: 8px;
+      padding: 20px; margin-bottom: 16px;
+    }
+    .card h2 {
+      margin: 0 0 14px; font-size: 1.1rem; color: #3275ac;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .card h2 .pill {
+      font-size: 10px; padding: 2px 8px; border-radius: 10px;
+      font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .card h2 .pill.stub  { background: #fef8d5; color: #6b5205; border: 1px solid #d3b634; }
+    .card h2 .pill.ready { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+
+    /* Two side-by-side groups: Worktime block on the left, Lunch break
+       on the right. Each group has its own subtle frame + heading so
+       you don't have to guess which END belongs to which START. On
+       narrow screens they stack. */
+    .time-groups {
+      display: flex; gap: 14px; flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
+    .time-group {
+      /* Hug the content instead of stretching — the two groups sit
+         left-aligned next to each other and leave the right side of
+         the card empty. */
+      flex: 0 0 auto;
+      background: #fafafa;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 12px 14px 4px;
+    }
+    .time-group h3 {
+      margin: 0 0 10px; font-size: 12px;
+      color: #3275ac; text-transform: uppercase; letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+    .field label {
+      font-size: 12px; color: #555;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    /* Custom HH:MM widget — two 24-hour selects with a colon between.
+       Avoids the browser's <input type="time"> which follows the OS
+       locale (12h + AM/PM on US Windows) — we want strict 24h everywhere. */
+    .hhmm { display: inline-flex; align-items: center; gap: 4px; }
+    .hhmm select {
+      font-family: inherit; font-size: 15px; font-weight: 600;
+      padding: 8px 10px; border: 1px solid #bbb; border-radius: 4px;
+      background: #fff; cursor: pointer;
+    }
+    .hhmm .sep { color: #888; font-weight: 700; }
+
+    /* Compact rule row: checkbox + label + trigger hint. Reads as
+       "when X happens, do Y" so an owner glancing at the page can
+       see what's automated in three seconds. */
+    .rule {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 12px 0; border-top: 1px solid #eee;
+    }
+    .rule:first-of-type { border-top: none; padding-top: 4px; }
+    .rule input[type=checkbox] {
+      width: 20px; height: 20px; margin-top: 2px; flex: 0 0 auto;
+      cursor: pointer;
+    }
+    .rule-body { flex: 1 1 auto; min-width: 0; }
+    .rule-title { font-size: 14px; font-weight: 600; color: #222; margin: 0 0 4px; }
+    .rule-desc  { font-size: 12px; color: #666; line-height: 1.5; }
+    .rule-trigger {
+      display: inline-block; font-size: 11px; padding: 2px 8px;
+      border-radius: 10px; background: #eef4fb; color: #3275ac;
+      font-weight: 600; letter-spacing: 0.02em; margin-left: 6px;
+      white-space: nowrap;
+    }
+
+    .actions { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    button {
+      font-family: inherit; padding: 10px 18px;
+      border: 1px solid #3275ac; border-radius: 4px;
+      cursor: pointer; font-size: 14px; background: #fff;
+      color: #3275ac;
+    }
+    button.primary { background: #3275ac; color: #fff; }
+    button.primary:hover { opacity: 0.9; }
+
+    .help {
+      font-size: 12px; color: #666; margin: 8px 0 0;
+      background: #f5f5f5; padding: 10px; border-radius: 4px;
+      border-left: 3px solid #3275ac;
+      line-height: 1.5;
+    }
+    .warn {
+      font-size: 13px; color: #8a5a10;
+      background: #fdf2d5; padding: 10px; border-radius: 4px;
+      border-left: 3px solid #d68b18;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+    .toast {
+      padding: 10px 14px; border-radius: 6px;
+      margin-bottom: 12px; font-size: 13px;
+    }
+    .toast.ok  { background: #dff2df; color: #1a5d1a; border: 1px solid #1a7a1a; }
+    .toast.err { background: #fbe6e6; color: #8b1a1a; border: 1px solid #c0392b; }
+  </style>
+  <script src="/overlay.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <a class="home" href="/index.html">&larr; Home</a>
+    <a class="home" href="/settings.html">&larr; Settings</a>
+    <h1>Work hours</h1>
+  </div>
+
+  <div id="toast-holder"></div>
+
+  <div class="card">
+    <h2>Schedule</h2>
+    <div class="help" style="margin: 0 0 14px;">
+      Times use the server's local clock. Enter as 24-hour HH:MM.
+      The rules below reference these values, so change them here first
+      before ticking any automation.
+    </div>
+
+    <div class="time-groups">
+      <div class="time-group">
+        <h3>Worktime</h3>
+        <div class="field">
+          <label>Start</label>
+          <span class="hhmm">
+            <select id="day-start-h" aria-label="Hour"></select>
+            <span class="sep">:</span>
+            <select id="day-start-m" aria-label="Minute"></select>
+          </span>
+        </div>
+        <div class="field">
+          <label>End</label>
+          <span class="hhmm">
+            <select id="day-end-h" aria-label="Hour"></select>
+            <span class="sep">:</span>
+            <select id="day-end-m" aria-label="Minute"></select>
+          </span>
+        </div>
+      </div>
+
+      <div class="time-group">
+        <h3>Lunch break</h3>
+        <div class="field">
+          <label>Start</label>
+          <span class="hhmm">
+            <select id="lunch-start-h" aria-label="Hour"></select>
+            <span class="sep">:</span>
+            <select id="lunch-start-m" aria-label="Minute"></select>
+          </span>
+        </div>
+        <div class="field">
+          <label>End</label>
+          <span class="hhmm">
+            <select id="lunch-end-h" aria-label="Hour"></select>
+            <span class="sep">:</span>
+            <select id="lunch-end-m" aria-label="Minute"></select>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Elapsed time</h2>
+    <div class="help" style="margin: 0 0 14px;">
+      Everything below is passive — the app doesn't touch job statuses
+      automatically. If a job's window overlaps with the lunch break
+      above, the lunch minutes are simply subtracted when the elapsed
+      time is displayed or printed.
+    </div>
+
+    <label class="rule">
+      <input type="checkbox" id="deduct-lunch" />
+      <div class="rule-body">
+        <div class="rule-title">
+          Deduct lunch break from elapsed
+        </div>
+        <div class="rule-desc">
+          When a job's active window contains the lunch interval, the
+          lunch minutes are subtracted at display and print time.
+          Retroactive — change the lunch times above and every past
+          job's elapsed re-computes on next view. Raw timestamps on
+          disk are never mutated.
+        </div>
+      </div>
+    </label>
+
+    <div class="actions">
+      <button class="primary" id="save-btn">Save preferences</button>
+    </div>
+  </div>
+
+  <script>
+    const toastHolder = document.getElementById("toast-holder");
+    function toast(kind, msg) {
+      const t = document.createElement("div");
+      t.className = "toast " + kind;
+      t.textContent = msg;
+      toastHolder.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
+    // The four time pickers are all identical — hour select (00–23)
+    // + minute select (00, 05, 10, …, 55). Building them from JS keeps
+    // the HTML lean and guarantees every widget shares the exact same
+    // option list, so a future change (e.g. minute step) lives in one
+    // place.
+    const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+    const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
+
+    function populateSelect(id, values) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = values.map(v => `<option value="${v}">${v}</option>`).join("");
+    }
+
+    // Populate every time picker with the shared option lists.
+    [
+      "day-start-h", "day-end-h", "lunch-start-h", "lunch-end-h",
+    ].forEach(id => populateSelect(id, HOURS));
+    [
+      "day-start-m", "day-end-m", "lunch-start-m", "lunch-end-m",
+    ].forEach(id => populateSelect(id, MINUTES));
+
+    // Parse an HH:MM string from settings.json and set the two selects.
+    // If the stored minute isn't a multiple of 5 (e.g. legacy data), we
+    // round DOWN to the nearest tick so the option list stays clean —
+    // rounding up would silently push the workday end past its saved
+    // value, which reads worse to the user.
+    function setPair(hId, mId, hhmm, fallback) {
+      const m = String(hhmm || fallback).trim().match(/^(\d{1,2}):(\d{2})/);
+      const h  = m ? Math.min(23, Math.max(0, Number(m[1]))) : Number(fallback.split(":")[0]);
+      const mn = m ? Math.min(59, Math.max(0, Number(m[2]))) : Number(fallback.split(":")[1]);
+      const rounded = Math.floor(mn / 5) * 5;
+      document.getElementById(hId).value = String(h).padStart(2, "0");
+      document.getElementById(mId).value = String(rounded).padStart(2, "0");
+    }
+    function readPair(hId, mId) {
+      const h = document.getElementById(hId).value || "00";
+      const m = document.getElementById(mId).value || "00";
+      return `${h}:${m}`;
+    }
+
+    async function load() {
+      try {
+        const res = await fetch("/api/settings");
+        const s = await res.json();
+        setPair("day-start-h",   "day-start-m",   s.work_day_start_hhmm,   "08:00");
+        setPair("day-end-h",     "day-end-m",     s.work_day_end_hhmm,     "17:00");
+        setPair("lunch-start-h", "lunch-start-m", s.work_lunch_start_hhmm, "12:30");
+        setPair("lunch-end-h",   "lunch-end-m",   s.work_lunch_end_hhmm,   "13:00");
+        document.getElementById("deduct-lunch").checked =
+          !!s.deduct_lunch_from_elapsed;
+      } catch (e) {
+        toast("err", "Could not load settings: " + e.message);
+      }
+    }
+
+    // Convert HH:MM to a minutes-since-midnight integer for easy
+    // ordering comparisons. Both sides of every check below run through
+    // this so we're comparing numbers, not strings.
+    function toMin(hhmm) {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      return (h || 0) * 60 + (m || 0);
+    }
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("save-btn");
+      const wStart = readPair("day-start-h",   "day-start-m");
+      const wEnd   = readPair("day-end-h",     "day-end-m");
+      const lStart = readPair("lunch-start-h", "lunch-start-m");
+      const lEnd   = readPair("lunch-end-h",   "lunch-end-m");
+
+      // Ordering checks: worktime end must come after start, lunch
+      // end must come after lunch start, and lunch must sit *strictly
+      // inside* the worktime window — a lunch that starts before work
+      // does or ends after work does is nonsense the scheduler can't
+      // act on later.
+      const ws = toMin(wStart), we = toMin(wEnd);
+      const ls = toMin(lStart), le = toMin(lEnd);
+      if (we <= ws) {
+        flashSaveStatus(btn, "err", { errLabel: "End before start" });
+        return;
+      }
+      if (le <= ls) {
+        flashSaveStatus(btn, "err", { errLabel: "Lunch end before start" });
+        return;
+      }
+      if (ls <= ws || le >= we) {
+        flashSaveStatus(btn, "err", { errLabel: "Lunch outside worktime" });
+        return;
+      }
+
+      const body = {
+        work_day_start_hhmm:   wStart,
+        work_day_end_hhmm:     wEnd,
+        work_lunch_start_hhmm: lStart,
+        work_lunch_end_hhmm:   lEnd,
+        deduct_lunch_from_elapsed:
+          document.getElementById("deduct-lunch").checked,
+      };
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaveStatus(btn, "ok");
+      } catch (_) {
+        flashSaveStatus(btn, "err");
+      }
+    });
+
+    load();
+  </script>
+</body>
+
+</html>

@@ -43,28 +43,39 @@
 
   function injectStyles() {
     const css = `
+      /* User bar in the top-right corner. Only shown on the home page
+         (see refreshUserbar) — every other page just wastes screen-space
+         with it and, when the panels get busy, it starts overlapping
+         real content. Home page has the clock so there's always room.
+         Design is a pill: worker name on the left, red logout arrow on
+         the right, one click to sign out. */
       #auth-userbar {
         position: fixed;
         top: 10px;
         right: 12px;
         z-index: 8500;
         display: none;
-        width: 36px;
+        align-items: center;
+        gap: 8px;
         height: 36px;
-        border-radius: 50%;
+        padding: 0 12px 0 14px;
+        border-radius: 18px;
         background: rgba(255,255,255,0.95);
         border: 1px solid #ccc;
         box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-        align-items: center;
-        justify-content: center;
-        padding: 0;
         cursor: pointer;
-        color: #c33;
         font-family: "JetBrains Mono", monospace;
+        font-size: 13px;
+        font-weight: 600;
+        color: #333;
       }
       #auth-userbar.visible { display: inline-flex; }
       #auth-userbar:hover { background: #fde6e6; }
-      #auth-userbar svg { display: block; }
+      #auth-userbar svg { display: block; color: #c33; flex: 0 0 auto; }
+      #auth-userbar .auth-user-name {
+        white-space: nowrap;
+        color: #333;
+      }
       @media print { #auth-userbar { display: none !important; } }
 
       #auth-modal-bg {
@@ -136,6 +147,7 @@
     bar.type = "button";
     bar.setAttribute("aria-label", "Sign out");
     bar.innerHTML = `
+      <span class="auth-user-name"></span>
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
         <polyline points="16 17 21 12 16 7" />
@@ -149,12 +161,21 @@
     });
   }
 
+  // True on the home page only. Everywhere else we hide the userbar so
+  // it doesn't clip real UI in a corner where cards are packed close.
+  function isHomePage() {
+    const p = window.location.pathname || "/";
+    return p === "/" || /\/index\.html?$/.test(p);
+  }
+
   function refreshUserbar() {
     const bar = document.getElementById("auth-userbar");
     if (!bar) return;
     const w = readWorker();
-    if (!w) { bar.classList.remove("visible"); return; }
+    if (!w || !isHomePage()) { bar.classList.remove("visible"); return; }
     const name = `${w.first_name || ""} ${w.last_name || ""}`.trim() || w.id;
+    const nameEl = bar.querySelector(".auth-user-name");
+    if (nameEl) nameEl.textContent = name;
     bar.title = `Sign out (${name})`;
     bar.classList.add("visible");
   }

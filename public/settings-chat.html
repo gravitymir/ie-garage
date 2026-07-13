@@ -50,12 +50,10 @@
     .event .ic { font-size: 22px; text-align: center; line-height: 1; }
     /* Match the status badges on /jobs.html and car.html Jobs list so the
        mechanic sees the same glyph for the same event across the app:
-         ● blue  = Open (a new job just started)
-         ✓ yellow = Work done (mechanic finished, awaiting delivery)
-         ✓ green  = Closed (delivered, doc locked) */
+         ●   blue  = Open (a new job just started)
+         ✓✓ green = Work done (terminal state — was two statuses, now one) */
     .event .ic.ic-open    { color: #3275ac; font-weight: 900; }
-    .event .ic.ic-workdone{ color: #b58c00; font-weight: 900; }
-    .event .ic.ic-closed  { color: #2a7;    font-weight: 900; }
+    .event .ic.ic-workdone{ color: #2a7;    font-weight: 900; }
     .event .body { min-width: 0; }
     .event .name { font-weight: 700; font-size: 14px; }
     .event .desc { color: #666; font-size: 12px; margin-top: 2px; }
@@ -100,6 +98,7 @@
   <script src="/overlay.js"></script>
   <script src="/auth.js"></script>
   <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
 </head>
 
 <body>
@@ -133,10 +132,10 @@
       </label>
 
       <label class="event">
-        <div class="ic ic-workdone">✓</div>
+        <div class="ic ic-workdone">✓✓</div>
         <div class="body">
           <div class="name">Work done</div>
-          <div class="desc">Mechanic marked the job as done — awaiting QC / delivery. Document is still editable.</div>
+          <div class="desc">Job marked as completed — this is the terminal state. Editable on the same day; frozen after midnight.</div>
         </div>
         <span class="toggle">
           <input type="checkbox" id="chat_notify_job_finished" />
@@ -148,22 +147,10 @@
         <div class="ic ic-open">↺</div>
         <div class="body">
           <div class="name">Job reopened</div>
-          <div class="desc">QC sent the car back for more work — the job returned to Open.</div>
+          <div class="desc">Same-day rework — the job returned from Work done back to Open.</div>
         </div>
         <span class="toggle">
           <input type="checkbox" id="chat_notify_job_reopened" />
-          <span class="track"></span>
-        </span>
-      </label>
-
-      <label class="event">
-        <div class="ic ic-closed">✓✓</div>
-        <div class="body">
-          <div class="name">Job closed &amp; delivered</div>
-          <div class="desc">Final: car handed to the customer, document locked from editing.</div>
-        </div>
-        <span class="toggle">
-          <input type="checkbox" id="chat_notify_job_closed" />
           <span class="track"></span>
         </span>
       </label>
@@ -319,7 +306,6 @@
       "chat_notify_job_started",
       "chat_notify_job_finished",
       "chat_notify_job_reopened",
-      "chat_notify_job_closed",
       "chat_notify_stock_arrival",
       "chat_notify_low_stock",
     ];
@@ -484,6 +470,7 @@
     // settings.json so sending only the fields on this page is safe: it
     // won't wipe branding / screensaver / print flags managed elsewhere.
     document.getElementById("save-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("save-btn");
       const body = {};
       KEYS.forEach(k => { body[k] = document.getElementById(k).checked; });
       RET_INT_KEYS.forEach(k => {
@@ -506,9 +493,9 @@
         });
         if (!res.ok) throw new Error(await res.text());
         bustSettingsCache();
-        toast("ok", "Saved.");
-      } catch (e) {
-        toast("err", "Save failed: " + e.message);
+        flashSaveStatus(btn, "ok");
+      } catch (_) {
+        flashSaveStatus(btn, "err");
       }
     });
 

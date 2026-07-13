@@ -141,6 +141,7 @@
   <script src="/overlay.js"></script>
   <script src="/auth.js"></script>
   <script src="/chat.js"></script>
+  <script src="/save-feedback.js"></script>
 </head>
 
 <body>
@@ -281,11 +282,15 @@
     }
 
     document.getElementById("save-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("save-btn");
       const body = {
         name: document.getElementById("name").value.trim(),
         description: document.getElementById("description").value.trim(),
       };
-      if (!body.name) { toast("err", "Name is required."); return; }
+      if (!body.name) {
+        flashSaveStatus(btn, "err", { errLabel: "Name required" });
+        return;
+      }
       try {
         const res = await fetch(`/api/store/divisions/${encodeURIComponent(divId)}`, {
           method: "PUT",
@@ -293,10 +298,10 @@
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(await res.text());
-        toast("ok", "Saved.");
+        flashSaveStatus(btn, "ok");
         titleEl.textContent = body.name;
-      } catch (e) {
-        toast("err", "Save failed: " + e.message);
+      } catch (_) {
+        flashSaveStatus(btn, "err");
       }
     });
 
@@ -364,8 +369,8 @@
             body: JSON.stringify({ filename: f.name, data_base64: String(r.result) }),
           });
           if (!res.ok) throw new Error(await res.text());
+          // No toast on success — the photo appearing IS the confirmation.
           setPhotoState(true, Date.now());
-          toast("ok", "Photo uploaded.");
         } catch (err) {
           toast("err", "Upload failed: " + err.message);
         }
@@ -382,10 +387,10 @@
           method: "DELETE",
         });
         if (!res.ok) throw new Error(await res.text());
+        // No toast on success — the placeholder returning IS the confirmation.
         setPhotoState(false);
         // Lightbox is meaningless once the photo is gone — dismiss it.
         closeLightbox();
-        toast("ok", "Photo removed.");
       } catch (e) {
         toast("err", "Delete failed: " + e.message);
       }

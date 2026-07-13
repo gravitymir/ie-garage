@@ -23,18 +23,16 @@
       padding: 6px 12px; border: 1px solid #3275ac; border-radius: 4px;
     }
 
-    /* Add-form card at the top — same style as workers add flow. */
-    .add-card {
-      background: #fff; border: 1px solid #ccc; border-radius: 8px;
-      padding: 16px 20px; margin-bottom: 16px;
+    /* Search bar — same shape as /cars.html so the two lists behave
+       identically: type to filter, and if nothing matches a big "+ Add"
+       button appears below to spawn a new record with that name. */
+    .toolbar {
+      display: flex; gap: 8px; align-items: center;
+      margin-bottom: 16px; flex-wrap: wrap;
     }
-    .add-row {
-      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-    }
-    .add-row input {
+    input[type="search"], input[type="text"] {
       font-family: inherit; padding: 10px 12px; font-size: 14px;
       border: 1px solid #bbb; border-radius: 4px;
-      flex: 1; min-width: 220px;
     }
     button {
       font-family: inherit; padding: 10px 18px;
@@ -168,25 +166,26 @@
 
   <div id="toast-holder"></div>
 
-  <div class="add-card">
-    <div class="add-row">
-      <input type="text" id="new-name" placeholder="New division name (e.g. Tires, Oil, Filters…)" autocomplete="off" />
-      <button class="primary" id="add-btn">+ Add</button>
-    </div>
-    <div class="muted">
-      Click any card to open its settings (name, description, photo).
-    </div>
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search or type a new division name..." autocomplete="off" style="flex:1; min-width:200px;" />
   </div>
 
   <div class="muted" id="status">Loading…</div>
   <div class="grid" id="grid"></div>
 
+  <!-- Shown only when the search term matches no existing division. -->
+  <div id="empty-add" style="display:none; text-align:center; margin-top:24px;">
+    <button class="primary" id="add-btn" style="font-size:18px; padding:16px 32px;">+ Add division <span id="add-name"></span></button>
+  </div>
+
   <script>
     const toastHolder = document.getElementById("toast-holder");
-    const statusEl = document.getElementById("status");
-    const grid = document.getElementById("grid");
-    const newNameInput = document.getElementById("new-name");
-    const addBtn = document.getElementById("add-btn");
+    const statusEl    = document.getElementById("status");
+    const grid        = document.getElementById("grid");
+    const searchEl    = document.getElementById("search");
+    const emptyAdd    = document.getElementById("empty-add");
+    const addBtn      = document.getElementById("add-btn");
+    const addNameEl   = document.getElementById("add-name");
 
     let divisions = [];
 
@@ -205,13 +204,28 @@
     }
 
     function render() {
+      const q = (searchEl.value || "").toLowerCase().trim();
+      const filtered = divisions.filter(d => {
+        if (!q) return true;
+        return [d.name, d.description].some(v => String(v || "").toLowerCase().includes(q));
+      });
       grid.innerHTML = "";
-      if (!divisions.length) {
-        statusEl.textContent = "No divisions yet. Add the first one above.";
+
+      if (!filtered.length) {
+        if (q) {
+          // Term typed but no match — offer to add it as a fresh division.
+          statusEl.textContent = "No matching division.";
+          addNameEl.textContent = `"${searchEl.value.trim()}"`;
+          emptyAdd.style.display = "";
+        } else {
+          statusEl.textContent = divisions.length ? "No matches." : "No divisions yet — type a name to add one.";
+          emptyAdd.style.display = "none";
+        }
         return;
       }
       statusEl.textContent = "";
-      divisions.forEach(d => {
+      emptyAdd.style.display = "none";
+      filtered.forEach(d => {
         const a = document.createElement("a");
         a.className = "div";
         a.href = `/store-division.html?id=${encodeURIComponent(d.id)}`;
@@ -265,7 +279,7 @@
     }
 
     async function addDivision() {
-      const name = newNameInput.value.trim();
+      const name = searchEl.value.trim();
       if (!name) return;
       addBtn.disabled = true;
       try {
@@ -276,13 +290,13 @@
         });
         if (!res.ok) throw new Error(await res.text());
         const created = await res.json();
-        newNameInput.value = "";
         toast("ok", `Added "${name}".`);
         // Jump straight to the new division's edit page so the user can add
         // description and photo while it's fresh in mind.
         if (created && created.id) {
           window.location.href = `/store-division.html?id=${encodeURIComponent(created.id)}`;
         } else {
+          searchEl.value = "";
           await load();
         }
       } catch (e) {
@@ -293,8 +307,14 @@
     }
 
     addBtn.addEventListener("click", addDivision);
-    newNameInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") addDivision();
+    // Re-filter as the user types.
+    searchEl.addEventListener("input", render);
+    // Enter fires "+ Add" when the empty-state button is showing — same
+    // shortcut as /cars.html so both lists respond identically to keyboard.
+    searchEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && emptyAdd.style.display !== "none") {
+        addDivision();
+      }
     });
 
     load();

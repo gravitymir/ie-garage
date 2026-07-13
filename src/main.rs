@@ -1,5 +1,6 @@
 use axum::extract::{DefaultBodyLimit, Json, Path, Query};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use std::sync::atomic::{AtomicU64, Ordering};
 use axum::response::{Redirect, Response};
 use axum::routing::{delete, get, post, put};
 use axum::Router;
@@ -67,14 +68,15 @@ fn store_divisions_file() -> PathBuf {
 fn store_division_photos_dir() -> PathBuf {
     store_dir().join("division-photos")
 }
-fn autofill_dir() -> PathBuf {
-    PathBuf::from("autofill")
-}
-fn autofill_rules_file() -> PathBuf {
-    autofill_dir().join("rules.json")
-}
 fn settings_dir() -> PathBuf {
     PathBuf::from("settings")
+}
+// Autofill rules live under settings/ to mirror the UI hierarchy (the
+// AUT card is a Settings sub-page, so its data belongs alongside the
+// other settings JSONs). The old top-level autofill/rules.json is
+// migrated on first startup — see migrate_autofill_location().
+fn autofill_rules_file() -> PathBuf {
+    settings_dir().join("autofill.json")
 }
 fn settings_file() -> PathBuf {
     settings_dir().join("settings.json")
@@ -84,6 +86,18 @@ fn chat_dir() -> PathBuf {
 }
 fn chat_messages_file() -> PathBuf {
     chat_dir().join("messages.json")
+}
+fn scanner_dir() -> PathBuf {
+    PathBuf::from("scanner")
+}
+fn scanner_devices_file() -> PathBuf {
+    scanner_dir().join("devices.json")
+}
+fn scanner_pending_tokens_file() -> PathBuf {
+    scanner_dir().join("pending-tokens.json")
+}
+fn scanner_scans_file() -> PathBuf {
+    scanner_dir().join("scans.json")
 }
 fn legacy_database_dir() -> PathBuf {
     PathBuf::from("database")
@@ -146,12 +160,25 @@ async fn main() {
     if !store_divisions_file().exists() {
         let _ = std::fs::write(store_divisions_file(), "[]");
     }
-    let _ = std::fs::create_dir_all(autofill_dir());
     let _ = std::fs::create_dir_all(settings_dir());
     let _ = std::fs::create_dir_all(chat_dir());
     if !chat_messages_file().exists() {
         let _ = std::fs::write(chat_messages_file(), "[]");
     }
+    let _ = std::fs::create_dir_all(scanner_dir());
+    for f in [
+        scanner_devices_file(),
+        scanner_pending_tokens_file(),
+        scanner_scans_file(),
+    ] {
+        if !f.exists() {
+            let _ = std::fs::write(f, "[]");
+        }
+    }
+    // Move any legacy autofill/rules.json to settings/autofill.json.
+    // Runs before we ever try to seed the file — otherwise we'd write an
+    // empty "[]" over user's rules on the first startup after upgrading.
+    migrate_autofill_location();
     if !autofill_rules_file().exists() {
         let _ = std::fs::write(autofill_rules_file(), "[]");
     }
@@ -160,6 +187,16 @@ async fn main() {
     migrate_legacy_database();
     // Backfill fuel_type="unknown" on existing cars that don't have one.
     backfill_fuel_type();
+    // Fold the retired Closed/Finished job status into Work done, rename
+    // any leftover "closed" timeline events, and stamp work_done_ms on
+    // legacy terminal jobs from the pre-migration file mtime. Runs every
+    // startup — no-op once every job on disk already matches the new
+    // model.
+    migrate_job_statuses();
+    // Warm up the per-car derived cache (engine_summary + displacement).
+    // Listing endpoints will now read these from car.json instead of
+    // walking the oil archive on every request.
+    backfill_car_derived_cache();
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -205,6 +242,11 @@ async fn main() {
         )
         // all jobs (global)
         .route("/api/jobs", get(list_all_jobs))
+        // Cheap counter for the home page — walks cars/*/jobs and tallies
+        // .json files. No car.json / worker / oil parsing, so it's O(dir
+        // reads) instead of O(full-payload build). Return shape is
+        // { "count": N } to keep it plainly distinct from list_all_jobs.
+        .route("/api/jobs/count", get(count_all_jobs))
         // workers
         .route("/api/workers", get(list_workers).post(create_worker))
         .route(
@@ -273,6 +315,17 @@ async fn main() {
             get(list_chat_feed).post(post_chat_message),
         )
         .route("/api/chat/event", post(post_chat_event))
+        // Scanner: phone-app pairing + scan intake. One pairing token per QR,
+        // consumed on POST /api/scanner/register in exchange for a per-device
+        // bearer token that then authorizes POST /api/scanner/scan.
+        .route("/api/scanner/pair", post(create_scanner_pair))
+        .route("/api/scanner/pair/:token/qr", get(get_scanner_pair_qr))
+        .route("/api/scanner/pair/:token/status", get(get_scanner_pair_status))
+        .route("/api/scanner/register", post(register_scanner_device))
+        .route("/api/scanner/devices", get(list_scanner_devices))
+        .route("/api/scanner/devices/:id", delete(delete_scanner_device))
+        .route("/api/scanner/scan", post(post_scanner_scan))
+        .route("/api/scanner/scans", get(list_scanner_scans))
         // Settings: one shared JSON blob (branding, screensaver, print flags)
         // plus a separate logo file for anything that shows a company mark.
         .route("/api/settings", get(get_settings).put(update_settings))
@@ -301,11 +354,14 @@ async fn main() {
         ))
         .layer(cors);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3333")
+    // Port 3000 — matches the existing ASUS port-forward rule on the
+    // shop's 4G-AC68U so the app is reachable from the outer LAN and
+    // (later) from the internet without changing router config.
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await
-        .expect("Failed to bind to 0.0.0.0:3333");
+        .expect("Failed to bind to 0.0.0.0:3000");
 
-    println!("Server running at http://localhost:3333");
+    println!("Server running at http://localhost:3000");
     axum::serve(listener, app).await.expect("server error");
 }
 
@@ -432,8 +488,19 @@ struct CarSummary {
     fuel_type: String,
     job_count: usize,
     last_job_ms: u128,
+    // Sort key for the cars list — the most recent job.json mtime under
+    // this car (0 if the car has no jobs). Deliberately does NOT include
+    // car.json mtime: editing the phone number or swapping the photo
+    // shouldn't fling a car to the top of the list. Only actual repair
+    // activity (a job save, a work-done stamp) moves the car up.
     photo: Option<String>,
     photo_updated_ms: u128,
+    // Status of the most recently-touched job that isn't fully closed —
+    // one of "open" / "paused" / "work_done" (or None if every job on
+    // this car is closed / there are no jobs). Drives the little inline
+    // badge on /cars.html so a mechanic sees at a glance which cars
+    // still have outstanding work.
+    open_status: Option<String>,
 }
 
 async fn list_cars() -> Result<Json<Value>, (StatusCode, String)> {
@@ -453,7 +520,14 @@ async fn list_cars() -> Result<Json<Value>, (StatusCode, String)> {
             Some(s) => s.to_string(),
             None => continue,
         };
-        let car_json: Value = std::fs::read_to_string(path.join("car.json"))
+        let car_json_path = path.join("car.json");
+        let car_json_mtime_ms: u128 = std::fs::metadata(&car_json_path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let car_json: Value = std::fs::read_to_string(&car_json_path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(Value::Null);
@@ -495,6 +569,12 @@ async fn list_cars() -> Result<Json<Value>, (StatusCode, String)> {
         let jobs_dir = path.join("jobs");
         let mut job_count = 0usize;
         let mut last_job_ms: u128 = 0;
+        // Track the most recently-modified non-closed job so we can surface
+        // its status on the list row. Peeking inside every job JSON is a
+        // little more work than the old metadata-only scan, but for a
+        // small-workshop dataset (dozens to a few hundred cars) it's fine.
+        let mut open_status: Option<String> = None;
+        let mut open_status_ms: u128 = 0;
         if jobs_dir.is_dir() {
             if let Ok(job_entries) = std::fs::read_dir(&jobs_dir) {
                 for je in job_entries.flatten() {
@@ -503,21 +583,58 @@ async fn list_cars() -> Result<Json<Value>, (StatusCode, String)> {
                         continue;
                     }
                     job_count += 1;
-                    if let Ok(meta) = std::fs::metadata(&jp) {
-                        if let Ok(modified) = meta.modified() {
-                            let ms = modified
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis();
-                            if ms > last_job_ms {
-                                last_job_ms = ms;
+                    let ms = std::fs::metadata(&jp)
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0);
+                    if ms > last_job_ms {
+                        last_job_ms = ms;
+                    }
+                    // Read status from the JSON. Legacy records without an
+                    // explicit "status" field derive it from the old
+                    // finished-bool the same way list_car_jobs does.
+                    let job_json: Value = std::fs::read_to_string(&jp)
+                        .ok()
+                        .and_then(|s| serde_json::from_str(&s).ok())
+                        .unwrap_or(Value::Null);
+                    let status = job_json
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| {
+                            if job_json
+                                .get("finished")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false)
+                            {
+                                "closed".to_string()
+                            } else {
+                                "open".to_string()
                             }
-                        }
+                        });
+                    let s_lower = status.to_lowercase();
+                    // Terminal states (work_done, plus legacy closed /
+                    // finished from before the merge) don't warrant a
+                    // badge — the car has no outstanding work. Only
+                    // in-flight statuses (open, paused) surface.
+                    let terminal = matches!(
+                        s_lower.as_str(),
+                        "work_done" | "closed" | "finished"
+                    );
+                    if !terminal && ms >= open_status_ms {
+                        open_status_ms = ms;
+                        open_status = Some(status);
                     }
                 }
             }
         }
 
+        // car_json_mtime_ms is intentionally NOT folded into the sort key
+        // anymore. It's still read (kept for potential debug/UI use) but
+        // photo swaps and phone-number edits no longer bump a car up.
+        let _ = car_json_mtime_ms;
         items.push(CarSummary {
             plate,
             make,
@@ -529,8 +646,12 @@ async fn list_cars() -> Result<Json<Value>, (StatusCode, String)> {
             last_job_ms,
             photo,
             photo_updated_ms,
+            open_status,
         });
     }
+    // Sort by most-recent repair activity. Cars with no jobs
+    // (last_job_ms == 0) fall to the bottom, which is fine — they'll
+    // move up naturally the moment the first job is created.
     items.sort_by(|a, b| b.last_job_ms.cmp(&a.last_job_ms));
     Ok(Json(json!({ "items": items })))
 }
@@ -589,6 +710,9 @@ async fn upsert_car(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     std::fs::write(dir.join("car.json"), pretty)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // mpmoil_variant may have changed → displacement (derived from
+    // variant name) may have changed too. Cheap to recompute.
+    refresh_car_derived_cache(&dir);
     Ok(Json(json!({ "ok": true, "plate": plate })))
 }
 
@@ -907,6 +1031,7 @@ async fn save_car_oil(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     std::fs::write(dir.join(&file_name), pretty)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    refresh_car_derived_cache(&cars_dir().join(&plate));
     Ok(Json(json!({ "ok": true, "file_name": file_name })))
 }
 
@@ -925,6 +1050,7 @@ async fn delete_car_oil(
         std::fs::remove_file(&path)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
+    refresh_car_derived_cache(&cars_dir().join(&plate));
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -1010,6 +1136,12 @@ async fn fetch_all_car_oils(
             }
         }
     }
+
+    // New oil archives just landed — engine_summary derived from them
+    // is now stale. Recompute + write to car.json so /api/jobs stays
+    // instant on the next load.
+    let car_dir = cars_dir().join(&plate);
+    refresh_car_derived_cache(&car_dir);
 
     Ok(Json(json!({
         "ok": true,
@@ -1368,6 +1500,102 @@ fn extract_displacement(name: &str) -> String {
     String::new()
 }
 
+/// Materialize derived per-car fields (`engine_summary`, `displacement`)
+/// into car.json, so listing endpoints can read them straight from the
+/// already-loaded car.json instead of walking the oil archive on every
+/// request. Runs once at startup for every car (idempotent) and again
+/// whenever the oil archive is (re)fetched.
+///
+/// Returns `(engine_summary, displacement)` from the fresh compute so the
+/// caller can also use the values right away.
+fn refresh_car_derived_cache(car_dir: &std::path::Path) -> (String, String) {
+    let car_json_path = car_dir.join("car.json");
+    let content = match std::fs::read_to_string(&car_json_path) {
+        Ok(s) => s,
+        Err(_) => return (String::new(), String::new()),
+    };
+    let mut json: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return (String::new(), String::new()),
+    };
+
+    let engine_summary = build_engine_summary(car_dir);
+    let variant_name = json
+        .pointer("/mpmoil_variant/name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let displacement = extract_displacement(&variant_name);
+
+    // Only write back if something actually changed — keeps mtime stable
+    // and the cars-list sort key (last_job_ms) unaffected.
+    let cur_engine = json.get("engine_summary").and_then(|v| v.as_str()).unwrap_or("");
+    let cur_disp   = json.get("displacement").and_then(|v| v.as_str()).unwrap_or("");
+    if cur_engine != engine_summary || cur_disp != displacement {
+        if let Some(obj) = json.as_object_mut() {
+            obj.insert("engine_summary".to_string(), Value::String(engine_summary.clone()));
+            obj.insert("displacement".to_string(),   Value::String(displacement.clone()));
+            if let Ok(pretty) = serde_json::to_string_pretty(&json) {
+                let _ = std::fs::write(&car_json_path, pretty);
+            }
+        }
+    }
+
+    (engine_summary, displacement)
+}
+
+/// Read a string field from car.json; if missing or empty, fall back
+/// to the given compute closure (which is not called when the field
+/// is present, so cache-hit is free).
+fn json_str_or_else<F: FnOnce() -> String>(json: &Value, key: &str, compute: F) -> String {
+    match json.get(key).and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => compute(),
+    }
+}
+
+/// One-shot startup pass: walks every car and materializes its derived
+/// cache fields in car.json. Cars that already have up-to-date values
+/// are cheap (no write). Cars that don't get one JSON parse + one write.
+fn backfill_car_derived_cache() {
+    let root = cars_dir();
+    if !root.is_dir() { return; }
+    let entries = match std::fs::read_dir(&root) { Ok(e) => e, Err(_) => return };
+    let mut cnt = 0usize;
+    for e in entries.flatten() {
+        let p = e.path();
+        if !p.is_dir() { continue; }
+        refresh_car_derived_cache(&p);
+        cnt += 1;
+    }
+    if cnt > 0 {
+        eprintln!("Refreshed derived cache on {} car(s).", cnt);
+    }
+}
+
+// Fast total-jobs count used by the home page tile. Skips reading any
+// job JSON — the tile just needs the number, so we only ask the OS how
+// many .json entries live under each cars/*/jobs directory. On a 140-
+// car / 158-job dataset this returns in single-digit milliseconds
+// versus multiple hundreds for the full list_all_jobs response.
+async fn count_all_jobs() -> Json<Value> {
+    let root = cars_dir();
+    let mut total: u64 = 0;
+    if let Ok(cars) = std::fs::read_dir(&root) {
+        for c in cars.flatten() {
+            let jobs = c.path().join("jobs");
+            if let Ok(entries) = std::fs::read_dir(&jobs) {
+                for e in entries.flatten() {
+                    if e.path().extension().and_then(|s| s.to_str()) == Some("json") {
+                        total += 1;
+                    }
+                }
+            }
+        }
+    }
+    Json(json!({ "count": total }))
+}
+
 async fn list_all_jobs() -> Result<Json<Value>, (StatusCode, String)> {
     let root = cars_dir();
     if !root.exists() {
@@ -1441,10 +1669,13 @@ async fn list_all_jobs() -> Result<Json<Value>, (StatusCode, String)> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let displacement = extract_displacement(&variant_name);
-        // Engine summary is built once per car (computed once, used for every
-        // job of that car below).
-        let engine_summary = build_engine_summary(&car_path);
+        // Prefer the pre-computed derived cache in car.json — populated
+        // at startup by backfill_car_derived_cache() and refreshed after
+        // every oil-fetch. Fallback to computing on the fly when the
+        // field is missing (fresh car whose cache hasn't been built yet
+        // — extremely rare, only until the next server restart).
+        let engine_summary = json_str_or_else(&car_json, "engine_summary", || build_engine_summary(&car_path));
+        let displacement   = json_str_or_else(&car_json, "displacement",   || extract_displacement(&variant_name));
 
         // Photo state per car (once) — the hover-preview on /jobs.html asks
         // for the thumb only when `has_photo` is true, so unfilled cars don't
@@ -1647,18 +1878,12 @@ async fn get_worker(Path(id): Path<String>) -> Result<Json<Value>, (StatusCode, 
     let id = sanitize_filename(&id);
     let content = std::fs::read_to_string(workers_dir().join(&id).join("worker.json"))
         .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
-    let mut json: Value = serde_json::from_str(&content)
+    let json: Value = serde_json::from_str(&content)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    // Never expose the password to the client. Replace with a boolean marker.
-    if let Some(obj) = json.as_object_mut() {
-        let has_pw = obj
-            .get("password")
-            .and_then(|v| v.as_str())
-            .map(|s| !s.is_empty())
-            .unwrap_or(false);
-        obj.remove("password");
-        obj.insert("has_password".to_string(), Value::Bool(has_pw));
-    }
+    // Password is returned as-is. This is nominal-only auth (плайн-текст
+    // by user request, see /api/auth/login) and the mechanic wants the
+    // edit form to display what's currently stored, so they can see it
+    // and re-type it on other devices without guessing.
     Ok(Json(json))
 }
 
@@ -1694,26 +1919,13 @@ async fn update_worker(
                 obj.insert("photo_updated_ms".to_string(), pu.clone());
             }
         }
-        // Password: empty / missing means "keep existing"; non-empty replaces.
-        // (Never echoed back by get_worker, so the form sends empty unless user retyped it.)
-        let incoming = obj
-            .get("password")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        match incoming {
-            Some(s) if !s.is_empty() => {
-                obj.insert("password".to_string(), Value::String(s));
-            }
-            _ => {
-                if let Some(existing_pw) = existing.get("password") {
-                    obj.insert("password".to_string(), existing_pw.clone());
-                } else {
-                    obj.remove("password");
-                }
-            }
+        // Password stored as-is (empty string included). The edit form
+        // loads the current value into the input, so whatever comes back
+        // in the PUT payload is the mechanic's explicit choice — no
+        // "empty means keep existing" magic anymore.
+        if !obj.contains_key("password") {
+            obj.insert("password".to_string(), Value::String(String::new()));
         }
-        // Strip the UI-only marker if the frontend sent it back.
-        obj.remove("has_password");
     }
     let pretty = serde_json::to_string_pretty(&payload)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -2065,6 +2277,218 @@ async fn delete_autofill_rule(Path(id): Path<String>) -> Result<Json<Value>, (St
 ///   • "hybrid" → "petrol-electric" (we now use Irish-reg-cert categories;
 ///     most hybrids are petrol-electric, the rare diesel-electric ones can
 ///     be re-classified manually)
+// Fold every legacy Closed / Finished job into the new single-terminal
+// Work done model.  For each job JSON under cars/*/jobs/*.json:
+//   1. status closed | finished    → status work_done
+//      (and: no status + finished:true → status work_done)
+//   2. events of type "closed" — if the job already carries a work_done
+//      event they're dropped as duplicates; otherwise they're renamed
+//      in place to work_done (so the timeline keeps one terminal event).
+//   3. work_done_ms is stamped from the file's mtime BEFORE we rewrite it
+//      — that's the best available approximation of "when the mechanic
+//      last touched this job". Frozen legacy jobs then correctly resolve
+//      to isWorkDoneToday() = false on the client.
+// Runs on every startup; no-op once every file already matches.
+fn migrate_job_statuses() {
+    let root = cars_dir();
+    if !root.is_dir() {
+        return;
+    }
+    let car_entries = match std::fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let mut status_rewrites  = 0usize;
+    let mut events_touched   = 0usize;
+    let mut wdms_filled      = 0usize;
+
+    for car_entry in car_entries.flatten() {
+        let car_dir = car_entry.path();
+        if !car_dir.is_dir() {
+            continue;
+        }
+        let jobs_dir = car_dir.join("jobs");
+        if !jobs_dir.is_dir() {
+            continue;
+        }
+        let job_entries = match std::fs::read_dir(&jobs_dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for je in job_entries.flatten() {
+            let jp = je.path();
+            if jp.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+
+            // Snapshot mtime BEFORE parsing/rewriting — the write below
+            // would otherwise reset it to "now" and every legacy job
+            // would resolve as isWorkDoneToday()=true, incorrectly
+            // unlocking Reopen.
+            let pre_mtime_ms: u64 = std::fs::metadata(&jp)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+
+            let content = match std::fs::read_to_string(&jp) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let mut json: Value = match serde_json::from_str(&content) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let obj = match json.as_object_mut() {
+                Some(o) => o,
+                None => continue,
+            };
+
+            let mut changed = false;
+
+            // ---- 1. status normalisation ---------------------------
+            let current_status = obj
+                .get("status")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let is_legacy_terminal = matches!(
+                current_status.as_deref(),
+                Some("closed") | Some("finished")
+            );
+            let no_status_but_finished_bool = current_status.is_none()
+                && obj
+                    .get("finished")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+            if is_legacy_terminal || no_status_but_finished_bool {
+                obj.insert(
+                    "status".to_string(),
+                    Value::String("work_done".to_string()),
+                );
+                status_rewrites += 1;
+                changed = true;
+            }
+
+            // ---- 2. events cleanup ---------------------------------
+            if let Some(events) = obj.get_mut("events").and_then(|v| v.as_array_mut()) {
+                let has_work_done_event = events.iter().any(|ev| {
+                    ev.get("type").and_then(|v| v.as_str()) == Some("work_done")
+                });
+                if has_work_done_event {
+                    // Both events present — drop the closed ones so the
+                    // timeline has a single terminal marker.
+                    let before = events.len();
+                    events.retain(|ev| {
+                        ev.get("type").and_then(|v| v.as_str()) != Some("closed")
+                    });
+                    let dropped = before - events.len();
+                    if dropped > 0 {
+                        events_touched += dropped;
+                        changed = true;
+                    }
+                } else {
+                    // Rename closed → work_done in place. Preserves the
+                    // moment the job actually finished for print + total.
+                    for ev in events.iter_mut() {
+                        if let Some(evo) = ev.as_object_mut() {
+                            if evo.get("type").and_then(|v| v.as_str()) == Some("closed") {
+                                evo.insert(
+                                    "type".to_string(),
+                                    Value::String("work_done".to_string()),
+                                );
+                                events_touched += 1;
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- 3. work_done_ms stamping --------------------------
+            // Re-read status after step 1 rewrote it.
+            let now_status = obj
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("open")
+                .to_string();
+            if now_status == "work_done" {
+                let has_wdm = obj
+                    .get("work_done_ms")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n > 0)
+                    .unwrap_or(false);
+                if !has_wdm && pre_mtime_ms > 0 {
+                    obj.insert(
+                        "work_done_ms".to_string(),
+                        Value::Number(serde_json::Number::from(pre_mtime_ms)),
+                    );
+                    wdms_filled += 1;
+                    changed = true;
+                }
+            }
+
+            if changed {
+                if let Ok(pretty) = serde_json::to_string_pretty(&json) {
+                    let _ = std::fs::write(&jp, pretty);
+                }
+            }
+        }
+    }
+
+    if status_rewrites > 0 {
+        println!(
+            "Migrated {} jobs: status closed/finished → work_done.",
+            status_rewrites
+        );
+    }
+    if events_touched > 0 {
+        println!(
+            "Cleaned up {} closed timeline events (renamed / de-duplicated).",
+            events_touched
+        );
+    }
+    if wdms_filled > 0 {
+        println!(
+            "Stamped work_done_ms on {} legacy terminal jobs from mtime.",
+            wdms_filled
+        );
+    }
+}
+
+// Move autofill/rules.json to settings/autofill.json on first startup
+// after the reshuffle. Runs every boot — becomes a no-op once the file
+// already lives in the new spot. The old autofill/ directory is
+// removed too (if empty) so file-explorer doesn't dangle an empty dir.
+fn migrate_autofill_location() {
+    let old_dir  = PathBuf::from("autofill");
+    let old_file = old_dir.join("rules.json");
+    let new_file = autofill_rules_file();
+    if !old_file.is_file() {
+        // Nothing to move — but still take a swing at removing the empty
+        // shell directory so it doesn't linger from a bare `cargo run`
+        // that pre-dated this change.
+        if old_dir.is_dir() {
+            let _ = std::fs::remove_dir(&old_dir);
+        }
+        return;
+    }
+    // Don't clobber a real file that already lives at the new spot —
+    // that would be a downgrade if the user hand-edited it.
+    if new_file.exists() {
+        let _ = std::fs::remove_file(&old_file);
+        let _ = std::fs::remove_dir(&old_dir);
+        return;
+    }
+    if let Some(parent) = new_file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if std::fs::rename(&old_file, &new_file).is_ok() {
+        let _ = std::fs::remove_dir(&old_dir);
+        println!("Migrated autofill/rules.json → settings/autofill.json");
+    }
+}
+
 fn backfill_fuel_type() {
     let root = cars_dir();
     if !root.is_dir() {
@@ -3095,14 +3519,10 @@ fn settings_defaults() -> Value {
         // so new installs get the full workshop feed; users can mute noise
         // via Settings → Chat.
         "chat_notify_job_started": true,
-        // "job_finished" historically covered Work done — keep the key so
-        // pre-existing settings.json files still gate that event.
+        // "job_finished" gates the Work done event — the terminal one now
+        // that Close & deliver has been merged in.
         "chat_notify_job_finished": true,
-        // Split off from finished so QC-returned jobs and delivered ones can
-        // be muted independently. Default true so a fresh install sees the
-        // full flow.
         "chat_notify_job_reopened": true,
-        "chat_notify_job_closed": true,
         "chat_notify_stock_arrival": true,
         "chat_notify_low_stock": true,
         // Chat feed retention. Three fields combine into one duration so the
@@ -3128,6 +3548,40 @@ fn settings_defaults() -> Value {
         // for messages the local user just typed themselves.
         "chat_sound_enabled": true,
         "chat_sound_volume": 60,
+        // Scanner (companion phone app) config.
+        //   pair_ttl_minutes — how long a pairing QR stays valid before the
+        //     token expires and you have to regenerate the code.
+        //   default_division — where /stocktake auto-routes scans from the
+        //     phone if the scan itself carries no division hint.
+        "scanner_pair_ttl_minutes": 10,
+        "scanner_default_division": "",
+        // Voice-to-text on the Notes field in /job.html. The browser's
+        // built-in Web Speech API (Chrome, Edge, Safari) does the work
+        // for free; this is only the recognition language passed to it.
+        // Provider slot is reserved for a future paid backend (Google
+        // Cloud STT, Whisper, etc.) — right now we always use "browser".
+        "voice_input_lang": "en-US",
+        "voice_input_provider": "browser",
+        // Backup / restore. Engine is unimplemented — these fields exist
+        // so the Settings → Backup page can already persist the user's
+        // choices, and when the scheduler + download endpoints come
+        // online they just read these values. `backup_last_ms` is
+        // updated by the future engine, not by the settings PUT.
+        "backup_auto_enabled": false,
+        "backup_auto_destination": "",
+        "backup_auto_schedule": "daily",
+        "backup_last_ms": 0,
+        // Work hours + lunch. Times are HH:MM strings so an
+        // <input type="time"> binds directly. Automation was scrapped
+        // in favour of a purely-passive model: raw start/end times get
+        // stored on the job, and only when a job is displayed / printed
+        // we subtract the lunch window if `deduct_lunch_from_elapsed`
+        // is on. Retroactive, no scheduler, no state juggling.
+        "work_day_start_hhmm": "09:00",
+        "work_day_end_hhmm": "18:00",
+        "work_lunch_start_hhmm": "13:00",
+        "work_lunch_end_hhmm": "14:00",
+        "deduct_lunch_from_elapsed": false,
     })
 }
 
@@ -3199,6 +3653,7 @@ async fn update_settings(
             "chat_autoclose_screensaver_pct",
             "chat_autoclose_fallback_minutes",
             "chat_sound_volume",
+            "scanner_pair_ttl_minutes",
         ] {
             if let Some(v) = new.get_mut(key) {
                 if let Some(s) = v.as_str() {
@@ -3387,6 +3842,38 @@ struct ChatFeedQuery {
     /// Only return messages with ts strictly greater than this.
     /// Client sends the max ts it already has, so polls only pull new stuff.
     since: Option<u64>,
+    /// Presence identity — stable across polls for one browser session.
+    /// Anything unique enough (worker_id if signed in, random session key
+    /// otherwise). Used to compute the "online now" tile in the chat
+    /// header. Not persisted; the map lives in-process only.
+    #[serde(default)]
+    client_id: String,
+}
+
+// In-memory presence table — {client_id: last-seen ms}. Rebuilds from
+// scratch on server restart, which is fine for a "who's online right
+// now" indicator. Entries older than PRESENCE_TTL_MS are pruned on
+// every read + write, so the table can't grow without bound even
+// under weird client_id churn.
+const PRESENCE_TTL_MS: u64 = 10 * 60 * 1000; // 10 min
+
+fn presence_map() -> &'static std::sync::Mutex<std::collections::HashMap<String, u64>> {
+    static M: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, u64>>>
+        = std::sync::OnceLock::new();
+    M.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn touch_and_count_presence(client_id: &str) -> u64 {
+    let now = now_millis() as u64;
+    let cutoff = now.saturating_sub(PRESENCE_TTL_MS);
+    let mut map = presence_map().lock().unwrap();
+    if !client_id.is_empty() {
+        map.insert(client_id.to_string(), now);
+    }
+    // Prune expired entries so the counter reflects reality and the
+    // map doesn't leak memory as browsers close.
+    map.retain(|_, ts| *ts >= cutoff);
+    map.len() as u64
 }
 
 async fn list_chat_feed(
@@ -3403,7 +3890,8 @@ async fn list_chat_feed(
                 .unwrap_or(false)
         })
         .collect();
-    Ok(Json(json!({ "items": items })))
+    let online = touch_and_count_presence(params.client_id.trim());
+    Ok(Json(json!({ "items": items, "online": online })))
 }
 
 // Append a value to the feed with a fresh, strictly-monotonic timestamp.
@@ -3477,4 +3965,444 @@ async fn post_chat_event(
     });
     let saved = append_chat_entry(entry)?;
     Ok(Json(json!({ "ok": true, "item": saved })))
+}
+
+// ---------- scanner: companion phone app pairing + intake ----------
+//
+// Flow:
+//   1. Desktop opens /settings-scanner.html and calls POST /api/scanner/pair
+//      with its own origin URL. Server mints a short-lived token, stores
+//      pending + server URL, and returns the token.
+//   2. Page renders /api/scanner/pair/:token/qr — an SVG QR encoding a JSON
+//      payload {v:1, server, token}.
+//   3. Phone scans the QR, extracts server+token, POSTs /api/scanner/register
+//      with the token. Server swaps the pair token for a permanent device
+//      token and returns it. The device stores this and uses it in the
+//      Authorization: Bearer header for every subsequent /api/scanner/scan.
+//   4. Desktop polls /api/scanner/pair/:token/status until it flips from
+//      "waiting" to "paired" — that's when the settings UI can show the new
+//      device in the list without a manual refresh.
+//
+// Retention / expiry:
+//   Pending tokens auto-drop on any read once their expires_ms passes.
+//   Scans + devices stay until explicitly deleted.
+
+// Not a CSPRNG — LAN pairing tokens live for ~10 min in a trusted network.
+// Mixes nanosecond clock, PID, a monotonic counter and an xorshift so guessing
+// one token doesn't leak the next.
+static SCANNER_TOKEN_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn scanner_new_token() -> String {
+    let counter = SCANNER_TOKEN_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let time_ns = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let mut state: u64 = time_ns
+        .wrapping_mul(counter.wrapping_add(1))
+        .wrapping_add(std::process::id() as u64)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    let mut out = String::with_capacity(48);
+    for _ in 0..6 {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        out.push_str(&format!("{:016x}", state));
+    }
+    out.truncate(48);
+    out
+}
+
+fn scanner_new_id(prefix: &str) -> String {
+    format!("{}-{}", prefix, &scanner_new_token()[..16])
+}
+
+fn read_json_array(path: &PathBuf) -> Vec<Value> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<Value>>(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_json_array(path: &PathBuf, list: &[Value]) -> Result<(), (StatusCode, String)> {
+    let pretty = serde_json::to_string_pretty(list)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    std::fs::write(path, pretty)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(())
+}
+
+fn scanner_pair_ttl_ms() -> u128 {
+    // Look up TTL in settings.json — falls back to 10 min if the file is
+    // missing or the field isn't set.
+    let mut minutes: u64 = 10;
+    if let Ok(txt) = std::fs::read_to_string(settings_file()) {
+        if let Ok(parsed) = serde_json::from_str::<Value>(&txt) {
+            if let Some(n) = parsed.get("scanner_pair_ttl_minutes").and_then(|v| v.as_u64()) {
+                if n > 0 {
+                    minutes = n;
+                }
+            }
+        }
+    }
+    (minutes as u128) * 60 * 1000
+}
+
+fn prune_expired_pair_tokens(list: &mut Vec<Value>) {
+    let now = now_millis();
+    list.retain(|t| {
+        t.get("expires_ms")
+            .and_then(|v| v.as_u64())
+            .map(|e| (e as u128) > now)
+            .unwrap_or(false)
+    });
+}
+
+#[derive(serde::Deserialize)]
+struct CreatePairBody {
+    #[serde(default)]
+    server_url: String,
+}
+
+async fn create_scanner_pair(
+    Json(payload): Json<CreatePairBody>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let server_url = payload.server_url.trim().to_string();
+    if server_url.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "server_url is required".into()));
+    }
+    let mut list = read_json_array(&scanner_pending_tokens_file());
+    prune_expired_pair_tokens(&mut list);
+    let token = scanner_new_token();
+    let now = now_millis();
+    let expires_ms = now + scanner_pair_ttl_ms();
+    let entry = json!({
+        "token": token,
+        "server_url": server_url,
+        "created_ms": now as u64,
+        "expires_ms": expires_ms as u64,
+        "consumed_device_id": Value::Null,
+    });
+    list.push(entry);
+    write_json_array(&scanner_pending_tokens_file(), &list)?;
+    Ok(Json(json!({
+        "token": token,
+        "expires_ms": expires_ms as u64,
+        "qr_url": format!("/api/scanner/pair/{}/qr", token),
+        "status_url": format!("/api/scanner/pair/{}/status", token),
+    })))
+}
+
+async fn get_scanner_pair_qr(Path(token): Path<String>) -> Result<Response, (StatusCode, String)> {
+    let mut list = read_json_array(&scanner_pending_tokens_file());
+    prune_expired_pair_tokens(&mut list);
+    let entry = list
+        .iter()
+        .find(|t| t.get("token").and_then(|v| v.as_str()) == Some(&token))
+        .cloned()
+        .ok_or((StatusCode::NOT_FOUND, "unknown or expired token".into()))?;
+    let server_url = entry
+        .get("server_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    // JSON payload for the future companion APK to decode. Version tag lets
+    // us evolve the format later without breaking older installs.
+    let payload = json!({
+        "v": 1,
+        "kind": "garage-scanner-pair",
+        "server": server_url,
+        "token": token,
+    });
+    let payload_str = payload.to_string();
+    let code = qrcode::QrCode::new(payload_str.as_bytes())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let svg = code
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(240, 240)
+        .quiet_zone(true)
+        .dark_color(qrcode::render::svg::Color("#111111"))
+        .light_color(qrcode::render::svg::Color("#ffffff"))
+        .build();
+    let mut resp = Response::new(svg.into_bytes().into());
+    resp.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static("image/svg+xml"));
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(resp)
+}
+
+async fn get_scanner_pair_status(
+    Path(token): Path<String>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let mut list = read_json_array(&scanner_pending_tokens_file());
+    prune_expired_pair_tokens(&mut list);
+    let Some(entry) = list
+        .iter()
+        .find(|t| t.get("token").and_then(|v| v.as_str()) == Some(&token))
+    else {
+        return Ok(Json(json!({ "status": "expired" })));
+    };
+    if let Some(dev_id) = entry.get("consumed_device_id").and_then(|v| v.as_str()) {
+        let devices = read_json_array(&scanner_devices_file());
+        let device = devices
+            .iter()
+            .find(|d| d.get("id").and_then(|v| v.as_str()) == Some(dev_id))
+            .cloned()
+            .unwrap_or(Value::Null);
+        return Ok(Json(json!({
+            "status": "paired",
+            "device": device,
+        })));
+    }
+    let expires_ms = entry.get("expires_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+    Ok(Json(json!({
+        "status": "waiting",
+        "expires_ms": expires_ms,
+    })))
+}
+
+#[derive(serde::Deserialize)]
+struct RegisterDeviceBody {
+    pair_token: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    platform: String,
+    #[serde(default)]
+    app_version: String,
+}
+
+async fn register_scanner_device(
+    Json(payload): Json<RegisterDeviceBody>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let mut pending = read_json_array(&scanner_pending_tokens_file());
+    prune_expired_pair_tokens(&mut pending);
+    let idx = pending
+        .iter()
+        .position(|t| t.get("token").and_then(|v| v.as_str()) == Some(payload.pair_token.as_str()))
+        .ok_or((StatusCode::BAD_REQUEST, "pairing token expired or unknown".into()))?;
+    if pending[idx]
+        .get("consumed_device_id")
+        .and_then(|v| v.as_str())
+        .is_some()
+    {
+        return Err((StatusCode::CONFLICT, "pairing token already used".into()));
+    }
+    let now = now_millis() as u64;
+    let device_id = scanner_new_id("dev");
+    let device_token = scanner_new_token();
+    let name = if payload.name.trim().is_empty() {
+        "Scanner".to_string()
+    } else {
+        payload.name.trim().to_string()
+    };
+    let platform = if payload.platform.trim().is_empty() {
+        "unknown".to_string()
+    } else {
+        payload.platform.trim().to_string()
+    };
+    let app_version = payload.app_version.trim().to_string();
+    let device = json!({
+        "id": device_id,
+        "name": name,
+        "device_token": device_token,
+        "created_ms": now,
+        "last_seen_ms": now,
+        "platform": platform,
+        "app_version": app_version,
+    });
+    let mut devices = read_json_array(&scanner_devices_file());
+    devices.push(device.clone());
+    write_json_array(&scanner_devices_file(), &devices)?;
+
+    pending[idx]["consumed_device_id"] = Value::String(device_id.clone());
+    write_json_array(&scanner_pending_tokens_file(), &pending)?;
+
+    Ok(Json(json!({
+        "device_id": device_id,
+        "device_token": device_token,
+        "name": device.get("name").cloned().unwrap_or(Value::Null),
+    })))
+}
+
+async fn list_scanner_devices() -> Result<Json<Value>, (StatusCode, String)> {
+    let devices = read_json_array(&scanner_devices_file());
+    // Strip device_token before returning to the browser — it's a bearer
+    // credential; only the phone that got it at register-time needs it.
+    let scrubbed: Vec<Value> = devices
+        .into_iter()
+        .map(|mut d| {
+            if let Some(obj) = d.as_object_mut() {
+                obj.remove("device_token");
+            }
+            d
+        })
+        .collect();
+    Ok(Json(json!({ "items": scrubbed })))
+}
+
+async fn delete_scanner_device(
+    Path(id): Path<String>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let mut devices = read_json_array(&scanner_devices_file());
+    let before = devices.len();
+    devices.retain(|d| d.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
+    if devices.len() == before {
+        return Err((StatusCode::NOT_FOUND, "device not found".into()));
+    }
+    write_json_array(&scanner_devices_file(), &devices)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+// Look up the caller's device by Authorization: Bearer <device_token>.
+// Returns (index_in_devices_list, device_id) so the caller can update
+// last_seen_ms after handling the request.
+fn scanner_auth_device(
+    headers: &HeaderMap,
+    devices: &[Value],
+) -> Result<(usize, String), (StatusCode, String)> {
+    let auth = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let token = auth
+        .strip_prefix("Bearer ")
+        .or_else(|| auth.strip_prefix("bearer "))
+        .unwrap_or("")
+        .trim();
+    if token.is_empty() {
+        return Err((StatusCode::UNAUTHORIZED, "missing bearer token".into()));
+    }
+    for (i, d) in devices.iter().enumerate() {
+        if d.get("device_token").and_then(|v| v.as_str()) == Some(token) {
+            let id = d
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            return Ok((i, id));
+        }
+    }
+    Err((StatusCode::UNAUTHORIZED, "invalid device token".into()))
+}
+
+#[derive(serde::Deserialize)]
+struct ScanBody {
+    #[serde(default)]
+    scans: Vec<Value>,
+    // Also accept single scan-shaped bodies so a naive client can POST
+    // {code, type, ...} without wrapping it.
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+    #[serde(default)]
+    confidence: Option<f64>,
+    #[serde(default)]
+    raw_text: Option<String>,
+    #[serde(default)]
+    scanned_ms: Option<u64>,
+}
+
+async fn post_scanner_scan(
+    headers: HeaderMap,
+    Json(body): Json<ScanBody>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let mut devices = read_json_array(&scanner_devices_file());
+    let (idx, device_id) = scanner_auth_device(&headers, &devices)?;
+    let now = now_millis() as u64;
+    devices[idx]["last_seen_ms"] = Value::Number(serde_json::Number::from(now));
+    write_json_array(&scanner_devices_file(), &devices)?;
+
+    let mut incoming: Vec<Value> = body.scans.clone();
+    if let Some(code) = body.code {
+        if !code.trim().is_empty() {
+            incoming.push(json!({
+                "code": code,
+                "type": body.kind.unwrap_or_default(),
+                "confidence": body.confidence,
+                "raw_text": body.raw_text,
+                "scanned_ms": body.scanned_ms.unwrap_or(now),
+            }));
+        }
+    }
+    if incoming.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "no scans in body".into()));
+    }
+
+    let mut scans = read_json_array(&scanner_scans_file());
+    let mut saved: Vec<Value> = Vec::with_capacity(incoming.len());
+    for item in incoming.into_iter() {
+        let code = item
+            .get("code")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if code.is_empty() {
+            continue;
+        }
+        let kind = item
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let confidence = item.get("confidence").cloned().unwrap_or(Value::Null);
+        let raw_text = item.get("raw_text").cloned().unwrap_or(Value::Null);
+        let scanned_ms = item
+            .get("scanned_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(now);
+        let entry = json!({
+            "id": scanner_new_id("scan"),
+            "device_id": device_id,
+            "code": code,
+            "type": kind,
+            "confidence": confidence,
+            "raw_text": raw_text,
+            "scanned_ms": scanned_ms,
+            "received_ms": now,
+            "dismissed": false,
+        });
+        scans.push(entry.clone());
+        saved.push(entry);
+    }
+    write_json_array(&scanner_scans_file(), &scans)?;
+    Ok(Json(json!({ "ok": true, "count": saved.len(), "items": saved })))
+}
+
+#[derive(serde::Deserialize)]
+struct ScansQuery {
+    #[serde(default)]
+    since: Option<u64>,
+    #[serde(default)]
+    pending: Option<bool>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+async fn list_scanner_scans(
+    Query(q): Query<ScansQuery>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let mut scans = read_json_array(&scanner_scans_file());
+    if let Some(since) = q.since {
+        scans.retain(|s| s.get("received_ms").and_then(|v| v.as_u64()).unwrap_or(0) > since);
+    }
+    if q.pending.unwrap_or(false) {
+        scans.retain(|s| !s.get("dismissed").and_then(|v| v.as_bool()).unwrap_or(false));
+    }
+    // Newest first.
+    scans.sort_by(|a, b| {
+        let av = a.get("received_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+        let bv = b.get("received_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+        bv.cmp(&av)
+    });
+    if let Some(limit) = q.limit {
+        scans.truncate(limit);
+    }
+    Ok(Json(json!({ "items": scans })))
 }
