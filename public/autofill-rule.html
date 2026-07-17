@@ -192,6 +192,7 @@
     </div>
     <datalist id="unit-suggestions">
       <option value="pcs"></option>
+      <option value="op"></option>
       <option value="L"></option>
       <option value="ml"></option>
       <option value="kg"></option>
@@ -209,9 +210,9 @@
     <h2>Engine oil</h2>
     <label class="oils-toggle">
       <input type="checkbox" id="oils-enabled" />
-      Add engine oils from this car's MPM archive
+      Add engine oils from this car's oil archive
     </label>
-    <div class="hint" style="margin-top:4px;">When ticked, every engine-oil product MPM recommends for this car is appended to the job's parts (one row per product). Numbers come from the MPM archive too.</div>
+    <div class="hint" style="margin-top:4px;">When ticked, every recommended engine-oil product for this car is appended to the job's parts (one row per product). Numbers come from the oil archive too.</div>
 
     <div id="oils-extra">
       <div class="oils-extra-row">
@@ -230,14 +231,14 @@
         </div>
         <div class="oef">
           <label>Quantity</label>
-          <div class="oils-qty-note">auto from MPM archive</div>
+          <div class="oils-qty-note">auto from oil archive</div>
         </div>
         <div class="oef oef-narrow">
           <label>Unit</label>
           <input type="text" value="L" readonly tabindex="-1" />
         </div>
       </div>
-      <div class="hint">Optional. Leave the year empty to skip this extra rule. Quantity is read from the engine-oil capacity in the car's MPM archive at autofill time; unit is always litres.</div>
+      <div class="hint">Optional. Leave the year empty to skip this extra rule. Quantity is read from the engine-oil capacity in the car's oil archive at autofill time; unit is always litres.</div>
     </div>
   </div>
 
@@ -459,7 +460,14 @@
         applyOilsToUI(r.oils);
         const parts = Array.isArray(r.parts) ? r.parts : [];
         if (!parts.length) { makeRow(); }
-        else { parts.forEach(p => makeRow(p.used, p.quantity, p.unit)); }
+        else {
+          parts.forEach(p => makeRow(p.used, p.quantity, p.unit));
+          // makeRow() only appends what was saved — normalizeRows enforces
+          // the "always one empty trailing slot" invariant so the user
+          // can add a new part on an existing rule without needing an
+          // explicit "+ Add" button.
+          normalizeRows();
+        }
       } catch (e) {
         statusEl.textContent = "Error: " + e.message;
         statusEl.className = "status err";

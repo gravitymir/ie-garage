@@ -193,7 +193,7 @@
         const oilsOn = !!(r.oils && r.oils.enabled);
         const olderYears = Number((r.oils && r.oils.older_than_years) || 0);
         const oilChip = oilsOn
-          ? `<span class="oil-chip" title="Appends every MPM-recommended engine oil for this car${olderYears > 0 ? `, plus an extra row for cars older than ${olderYears} years` : ""}">+ OIL${olderYears > 0 ? ` &gt;${olderYears}y` : ""}</span>`
+          ? `<span class="oil-chip" title="Appends every recommended engine oil for this car${olderYears > 0 ? `, plus an extra row for cars older than ${olderYears} years` : ""}">+ OIL${olderYears > 0 ? ` &gt;${olderYears}y` : ""}</span>`
           : "";
         a.innerHTML = `
           <div class="name-row">

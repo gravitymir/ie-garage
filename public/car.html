@@ -454,10 +454,15 @@
     }
     function extractEngineOilLitres(html) {
       if (!html) return null;
-      const m = html.match(/<h3>[^<]*engine[^<]*<\/h3>[\s\S]*?class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
-      if (m) return m[1].replace(",", ".");
-      const m2 = html.match(/class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
-      return m2 ? m2[1].replace(",", ".") : null;
+      const rx = /<h3>[^<]*engine[^<]*<\/h3>[\s\S]*?class="amount">\s*([0-9]+(?:[.,][0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:[.,][0-9]+)?))?\s*(?:liter|litre|l\b)/i;
+      const rxAny = /class="amount">\s*([0-9]+(?:[.,][0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:[.,][0-9]+)?))?\s*(?:liter|litre|l\b)/i;
+      const m = html.match(rx) || html.match(rxAny);
+      if (!m) return null;
+      // Lower bound only — the Engine field on the car card is a scalar
+      // display ("DBGA · 150HP · 4.7 L") to match every other downstream
+      // consumer. The range form ("4.7–5.5 L") is intentionally kept
+      // only inside the Add Car variant chooser.
+      return m[1].replace(",", ".");
     }
 
     function esc(s) {

@@ -258,7 +258,21 @@
     }
     .variant:hover { border-color: #3275ac; background: #f0f6fb; }
     .variant.disabled { opacity: 0.55; pointer-events: none; cursor: default; }
-    .variant .v-label { min-width: 0; flex: 1; }
+    /* Plate year hits the variant's production window — flag it as the
+       most likely match (Irish plates carry the year in the leading
+       digits, so this is usually decisive). */
+    .variant.year-match {
+      border: 2px solid #d4a017;
+      padding: 7px 9px; /* offset the +1px border so height stays put */
+    }
+    /* One-line label with tail ellipsis — long "Make + Model + trim + years"
+       strings ("Mercedes-Benz (EU) GLC-Class 250 4MATIC 2015 - 2019") stay
+       on one row and just clip on the right instead of wrapping and
+       ballooning the row height. */
+    .variant .v-label {
+      min-width: 0; flex: 1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     .variant .v-right { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
     .variant .v-engine { color: #555; font-size: 12px; }
     .variant .v-oil { font-weight: 900; color: #2a7; white-space: nowrap; }
@@ -324,7 +338,7 @@
     <div class="modal">
       <h2>Add Car</h2>
       <div class="tabs">
-        <button class="tab active" data-pane="lookup">Lookup (mpmoil)</button>
+        <button class="tab active" data-pane="lookup">Lookup</button>
         <button class="tab" data-pane="manual" style="display:none;">Manual</button>
       </div>
 
@@ -575,6 +589,37 @@
       return "";
     }
 
+    // Irish plate → registration year. Formats:
+    //   YYD…, YYC…, YY-CC-#####       (pre-2013, e.g. 05D12345 → 2005)
+    //   YY1D…, YY2D…                  (2013+, e.g. 192D13018 → 2019 H2)
+    // The "1" / "2" half-year digit is ignored — a range check only cares
+    // about the year. Returns a full 4-digit year or null when the plate
+    // doesn't look like an Irish reg.
+    function plateRegYear(plate) {
+      const s = String(plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const m = s.match(/^(\d{2})([12])?[A-Z]/);
+      if (!m) return null;
+      const yy = Number(m[1]);
+      // Two-digit split: 00–29 → 2000+yy, 30–99 → 1900+yy. The Irish
+      // scheme started in 1987; anything below "87" belongs to the 2000s.
+      const year = yy < 30 ? 2000 + yy : 1900 + yy;
+      return year;
+    }
+
+    // True when the plate's registration year sits inside the variant's
+    // production window. Missing bounds are treated as open-ended, so a
+    // variant listed as "2020 -" (still current) still matches 2024.
+    function variantMatchesPlateYear(v, plateYear) {
+      if (!plateYear) return false;
+      const fromRaw = v.year_from  ?? v.from_year ?? v.year_start ?? v.from ?? null;
+      const toRaw   = v.year_until ?? v.year_to   ?? v.to_year    ?? v.year_end ?? v.to ?? null;
+      const from = Number(fromRaw) || null;
+      const to   = Number(toRaw)   || null;
+      if (from && plateYear < from) return false;
+      if (to   && plateYear > to)   return false;
+      return !!(from || to); // at least one bound known → count as a match
+    }
+
     function switchToManual(plateValue, message) {
       // Reveal and activate the Manual tab (only happens when mpmoil finds nothing)
       document.querySelector('.tab[data-pane="manual"]').style.display = "";
@@ -587,7 +632,7 @@
         document.getElementById("m-plate").value = plateValue;
       }
       const status = document.getElementById("manual-status");
-      status.textContent = message || "Vehicle not found on mpmoil.ie — please enter details manually.";
+      status.textContent = message || "Vehicle not found — please enter details manually.";
       status.classList.add("err");
       // Focus first empty field
       const target = document.getElementById("m-make").value
@@ -608,13 +653,19 @@
     }
 
     // Pull the engine oil fill amount (litres) out of an mpmoil advice HTML blob.
-    // The Engine is the first component; its "advice-amount" table holds e.g. "3.5 liter".
+    // The Engine is the first component; its "advice-amount" table holds e.g.
+    // "3.5 liter" or a range like "4,7-5,5 liter (Service fill)". Comma is the
+    // decimal separator in MPM's locale — normalise to dot. Range is preserved
+    // in the returned string (as "min–max") so the UI matches MPM verbatim.
     function extractEngineOilLitres(html) {
       if (!html) return null;
-      const m = html.match(/<h3>[^<]*engine[^<]*<\/h3>[\s\S]*?class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
-      if (m) return m[1].replace(",", ".");
-      const m2 = html.match(/class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
-      return m2 ? m2[1].replace(",", ".") : null;
+      const rx = /<h3>[^<]*engine[^<]*<\/h3>[\s\S]*?class="amount">\s*([0-9]+(?:[.,][0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:[.,][0-9]+)?))?\s*(?:liter|litre|l\b)/i;
+      const rxAny = /class="amount">\s*([0-9]+(?:[.,][0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:[.,][0-9]+)?))?\s*(?:liter|litre|l\b)/i;
+      const m = html.match(rx) || html.match(rxAny);
+      if (!m) return null;
+      const lo = m[1].replace(",", ".");
+      const hi = m[2] ? m[2].replace(",", ".") : null;
+      return hi ? `${lo}–${hi}` : lo;
     }
 
     // Pull the engine name/code (e.g. "Engine Z14XEP") from the advice HTML.
@@ -684,15 +735,15 @@
         return;
       }
 
-      lookupStatus.textContent = "Looking up on mpmoil.ie...";
+      lookupStatus.textContent = "Looking up vehicle...";
       lookupStatus.classList.remove("err");
       lookupVariants.innerHTML = "";
-      showOverlay(`Searching mpmoil.ie for ${plate}…`);
+      showOverlay(`Looking up ${plate}…`);
       try {
         const res = await fetch(`/api/step-a?plate=${encodeURIComponent(plate)}`);
         const rawText = await res.text();
         if (!res.ok) {
-          switchToManual(plate, `mpmoil.ie returned an error (${res.status}). Enter details manually.`);
+          switchToManual(plate, `Lookup failed (${res.status}). Enter details manually.`);
           return;
         }
         // Some mpmoil "not found" responses come back as 200 with an error body
@@ -704,7 +755,7 @@
           if (looksLikeNotFound(rawText)) {
             switchToManual(plate);
           } else {
-            switchToManual(plate, "Unexpected response from mpmoil.ie. Enter details manually.");
+            switchToManual(plate, "Unexpected response from lookup. Enter details manually.");
           }
           return;
         }
@@ -725,12 +776,42 @@
         lookupStatus.textContent = multi
           ? `Found ${arr.length} variants — checking engine oil for each…`
           : `Found 1 variant. Select it to save the car:`;
-        const rows = arr.map(v => {
+        const plateYear = plateRegYear(plate);
+        // Precompute matches so we can suppress highlighting when it
+        // carries no signal — i.e. when every variant matches, or when
+        // none does. Highlight only when it actually narrows the choice.
+        const yearHits = arr.map(v => variantMatchesPlateYear(v, plateYear));
+        const hitCount = yearHits.filter(Boolean).length;
+        const shouldHighlight = hitCount > 0 && hitCount < arr.length;
+        const rows = arr.map((v, i) => {
           const baseName = v.name || v.title || v.label || v.model || v.slug || v.id || JSON.stringify(v);
-          const label = baseName + yearRange(v);
+          // Prepend the make (Mitsubishi / Mercedes / BMW / Opel / …)
+          // so the row reads as a full identity even when the raw
+          // `name` field is just a submodel like "ASX / RVR 1.6". If
+          // the make is already present at the start of baseName we
+          // skip it to avoid "Mitsubishi Mitsubishi ASX …".
+          //
+          // Note: MPMoil returns `make` and `brand` as **objects**
+          // (`{id, name, slug, logo_url, …}`) for some plates and as
+          // plain strings for others. Unwrap safely — a raw
+          // String(object) call produced "[object Object]" in the row.
+          const pickMake = (x) => {
+            if (typeof x === "string") return x.trim();
+            if (x && typeof x === "object") {
+              const n = x.name || x.title || x.label || x.slug || "";
+              return typeof n === "string" ? n.trim() : "";
+            }
+            return "";
+          };
+          const rawMake = pickMake(v.make) || pickMake(v.brand);
+          const label = (rawMake && !new RegExp("^" + rawMake.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(baseName)
+            ? `${rawMake} ${baseName}`
+            : baseName) + yearRange(v);
           const div = document.createElement("div");
           // For 2+ variants, keep rows locked until every oil amount has loaded.
-          div.className = "variant" + (multi ? " disabled" : "");
+          const yearHit = shouldHighlight && yearHits[i];
+          div.className = "variant" + (multi ? " disabled" : "") + (yearHit ? " year-match" : "");
+          if (yearHit) div.title = `Registration year ${plateYear} falls inside this variant's production window.`;
           div.innerHTML = `<span class="v-label"></span>${multi ? `<span class="v-right"><span class="v-engine"></span><span class="v-oil">…</span></span>` : ""}`;
           div.querySelector(".v-label").textContent = label;
           div.addEventListener("click", () => createFromLookup(plate, v, label));

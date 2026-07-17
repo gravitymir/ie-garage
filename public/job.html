@@ -252,10 +252,52 @@
     .trow.parts .pn,
     .trow.parts .pq,
     .trow.parts .pun { text-align: center; }
+    /* Bump text size inside every Parts-row input. Padding stays at
+       the base 6px 8px — trying to strip it down looked cramped in
+       DevTools, so the default vertical breathing room is fine. */
+    .trow.parts input {
+      font-size: 17px;
+    }
+    /* Parts rows sit closer together than Work / Notes — the row is
+       shorter and there are typically more of them, so the default
+       6px inter-row gap left a lot of dead space between filters, oils
+       and codes. Halving it keeps the table dense without cramping. */
+    #parts-body { gap: 3px; }
+    /* Kill the browser's built-in number-input spinner arrows. They eat
+       the right edge of the box and pull the visually-centred text
+       leftward, so a value like "1" or "4.7" reads as off-centre even
+       though text-align: center IS applied. Chromium uses the pseudo
+       elements; Firefox needs appearance: textfield on the input. */
+    .trow.parts .pq { -moz-appearance: textfield; appearance: textfield; }
+    .trow.parts .pq::-webkit-outer-spin-button,
+    .trow.parts .pq::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
     .add-row { margin-top: 8px; }
     .add-row button { font-size: 13px; padding: 6px 12px; }
 
-    .row-btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+    .row-btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; justify-content: flex-end; }
+    /* Action buttons sit in their own card directly under Timeline.
+       Flex row that fills the card width — Save is the primary action
+       so it gets the biggest slice, Pause the middle, Done the smallest.
+       No wrap: at very narrow widths every button still shrinks to fit
+       one line, matching how the mechanic reads the row on their phone. */
+    .action-btns {
+      display: flex; gap: 8px; align-items: stretch;
+    }
+    .action-btns button {
+      flex: 1 1 0;
+      min-width: 0;
+      padding-left: 4px;
+      padding-right: 4px;
+    }
+    /* Weighted so the row visually mirrors action importance:
+       Save (do it) > Pause (interrupt) > Done (rare terminal). */
+    #save-btn      { flex-grow: 3; }
+    #pause-btn     { flex-grow: 2; }
+    #work-done-btn { flex-grow: 1; }
+    #reopen-btn    { flex-grow: 2; }
     /* Work done — mechanic-side finish. Plain white / black outline to look
        distinct from the action-coloured Save and Pause/Resume buttons. Doc
        stays editable after this (QC / test drive can still fix things). */
@@ -275,7 +317,8 @@
     #pause-btn:hover { background: #fef3e6; }
     #pause-btn.paused { color: #3275ac; border-color: #3275ac; }
     #pause-btn.paused:hover { background: #eef4fb; }
-    #print-btn { margin-left: auto; }
+    /* Print row is now right-aligned via .row-btns justify-content, so
+       the individual button doesn't need its own margin-left tweak. */
     input[readonly], textarea[readonly] { background: #f0f0f0; color: #555; cursor: default; }
     .status-badge { font-weight: 700; font-size: 1.1rem; }
     .status-badge.open { color: #3275ac; }
@@ -409,13 +452,28 @@
             <label>Assigned worker</label>
             <select id="worker-select"><option value="">— select worker —</option></select>
           </div>
-          <div class="muted" id="worker-hint" style="margin-top:4px;">No worker assigned — this job is a draft. Select a worker to enable Save, Print, Pause and Finish.</div>
+          <div class="muted" id="worker-hint" style="margin-top:4px;">No worker assigned — this job is a draft. Select a worker to enable Save, Print, Pause and Done.</div>
         </div>
 
         <div class="card">
           <h2 style="display:flex; align-items:baseline; gap:8px;">Timeline <span class="status-badge" id="status-badge-tl" style="margin-left:auto;"></span></h2>
           <div id="events-list" class="timeline"></div>
           <div class="tl-total" id="tl-total"></div>
+        </div>
+
+        <!-- Action buttons live directly under Timeline so the state
+             controls sit next to the state they act on. Print (and any
+             other document-oriented actions) stay in a separate row at
+             the bottom of the page. -->
+        <div class="card action-btns">
+          <button id="save-btn">Save</button>
+          <button id="pause-btn" class="secondary">Pause</button>
+          <button id="work-done-btn">Done</button>
+          <!-- Reopen shows only while Work done was stamped TODAY (local
+               time). Once the day rolls over the document freezes: Reopen
+               disappears and a "Create new job" button takes its place,
+               which spawns a fresh job on the same car. -->
+          <button id="reopen-btn" style="display:none;">Reopen</button>
         </div>
       </div>
 
@@ -433,6 +491,7 @@
           </div>
           <datalist id="part-unit-suggestions">
             <option value="pcs"></option>
+            <option value="op"></option>
             <option value="L"></option>
             <option value="ml"></option>
             <option value="kg"></option>
@@ -467,16 +526,12 @@
     </div>
 
     <div class="row-btns">
-      <button id="save-btn">Save</button>
-      <button id="pause-btn" class="secondary">Pause job</button>
-      <button id="work-done-btn">Work done</button>
-      <!-- Reopen shows only while Work done was stamped TODAY (local
-           time). Once the day rolls over the document freezes: Reopen
-           disappears and a "Create new job" button takes its place,
-           which spawns a fresh job on the same car. -->
-      <button id="reopen-btn" style="display:none;">Reopen</button>
+      <!-- Frozen-doc replacement for Save/Pause/Done — spawns a fresh
+           job on the same car. Visibility flipped by updateStatusUI. -->
       <button id="new-job-btn" style="display:none;">Create new job</button>
       <button class="secondary" id="print-btn">Print</button>
+      <!-- Second Print button, different template (to be defined). -->
+      <button class="secondary" id="print2-btn">Print (mode 2)</button>
     </div>
     <div class="status" id="status"></div>
 
@@ -1084,7 +1139,14 @@
       });
       let best = null;
       for (const c of engineCaps) {
-        const n = Number(String((c && c.value) || "").replace(",", "."));
+        // Value can be a scalar ("5.5"), comma-decimal ("4,7") or a range
+        // ("4.7-5.5" / "4,7-5,5"). Take the LOWER bound in every case —
+        // the rest of the app expects a scalar (autofill qty, oil-card
+        // digit, print), and the minimum service-fill is the safe number
+        // to know: below it the engine is dry.
+        const raw = String((c && c.value) || "").replace(/,/g, ".");
+        const lo  = raw.split(/[-–]/, 2)[0].trim();
+        const n = Number(lo);
         if (!Number.isFinite(n) || n <= 0) continue;
         if (best === null || n < best.value) best = { value: n, unit: (c && c.unit) || "" };
       }
@@ -1111,7 +1173,7 @@
         Array.from(document.querySelectorAll("#parts-body .trow .pu"))
           .map(el => el.value.trim().toLowerCase()).filter(Boolean)
       );
-      if (typeof showOverlay === "function") showOverlay("Appending oils from MPM archive…");
+      if (typeof showOverlay === "function") showOverlay("Appending oils from archive…");
       let appended = 0;
       // First engine-oil capacity we encounter — reused for the older-than-X
       // extra row's quantity (so the user doesn't have to enter litres twice).
@@ -1577,7 +1639,7 @@
       const pb = document.getElementById("pause-btn");
       if (isOpen || isPaused) {
         pb.style.display = "";
-        pb.textContent = isPaused ? "Resume job" : "Pause job";
+        pb.textContent = isPaused ? "Resume" : "Pause";
         pb.classList.toggle("paused", isPaused);
       } else {
         pb.style.display = "none";
@@ -1601,7 +1663,7 @@
     // Work done all blocked (Reopen is safe — it just reverts state).
     function updateDraftState() {
       const ok = !!document.getElementById("worker-select").value;
-      ["save-btn", "print-btn", "pause-btn", "work-done-btn"].forEach(id => {
+      ["save-btn", "print-btn", "print2-btn", "pause-btn", "work-done-btn"].forEach(id => {
         const b = document.getElementById(id);
         if (b) b.disabled = !ok;
       });
@@ -1846,6 +1908,220 @@
       window.print();
     });
 
+    // Second Print button — classic Cleere Auto Services paper Work
+    // Order layout: boxed customer/vehicle header, then Work Description
+    // + Hours table, Parts Used + Number + Qty table, Special
+    // Instructions block, Work Completed By / Date. Blank rows padded
+    // so it's usable as a handwriting sheet even when the digital job
+    // is sparsely filled.
+    document.getElementById("print2-btn").addEventListener("click", () => {
+      const d = collect();
+
+      // Worker name — same fallback chain as the primary print handler.
+      const workerSel = document.getElementById("worker-select");
+      let workerName = "";
+      if (workerSel && workerSel.selectedIndex >= 0 && workerSel.value) {
+        workerName = workerSel.options[workerSel.selectedIndex].textContent.trim();
+      }
+      if (!workerName && typeof window.currentWorker === "function") {
+        const w = window.currentWorker();
+        if (w) workerName = `${w.first_name || ""} ${w.last_name || ""}`.trim();
+      }
+
+      // Year: prefer whatever's on the car record (usually the MPMoil
+      // variant's production window, "2016 - 2020"), else derive from
+      // the Irish plate. Irish plates start with YY (2 digits) — 00-29
+      // maps to 2000+YY, 30-99 maps to 1900+YY. So "19D…" → 2019,
+      // "06D…" → 2006, "95D…" → 1995.
+      let year = (car && (car.years || car.year)) || "";
+      if (!year) {
+        const m = String(plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "").match(/^(\d{2})/);
+        if (m) {
+          const yy = Number(m[1]);
+          year = String(yy < 30 ? 2000 + yy : 1900 + yy);
+        }
+      }
+      const chassis = (car && car.vin) || "";
+      // Mileage: print BOTH km and mi with unit labels. Either may be
+      // missing — join what's there with " / " so the cell still reads
+      // cleanly ("118510 km" alone if the driver only recorded km).
+      const mileageParts = [];
+      if (d.kilometrage) mileageParts.push(`${d.kilometrage} km`);
+      if (d.mileage)     mileageParts.push(`${d.mileage} mi`);
+      const mileage = mileageParts.join(" / ");
+      const notesText = (d.notes || []).map(n => n.text).filter(Boolean).join("\n");
+
+      // Date In on the form: split off the calendar date (first token)
+      // and bold it so "15.07.2026" stands out; the trailing "HH:MM:SS"
+      // stays regular weight. Same treatment for the footer Date.
+      const boldDateTime = (str) => {
+        const parts = String(str || "").split(/\s+/);
+        if (!parts[0]) return "";
+        return `<b>${esc(parts[0])}</b>${parts.slice(1).length ? " " + esc(parts.slice(1).join(" ")) : ""}`;
+      };
+      const dateInBoldHtml = boldDateTime(d.date_in);
+      // Footer Date = the most recent timeline event (pause / resume /
+      // work_done / reopen). Falls back to time_out for jobs stamped
+      // Work done, then to empty — no point echoing Date In again.
+      const lastEventAt = events.length ? events[events.length - 1].at : "";
+      const dateFooterBoldHtml = boldDateTime(lastEventAt || d.time_out || "");
+
+      // Total worked hours for the job — same math as the primary
+      // Work Order handler, expressed as a decimal ("3.5", "0.8"),
+      // stamped into the Hours cell of the FIRST work row so the
+      // sheet shows at a glance how long the job actually took.
+      const endStr = (status === "work_done") ? d.time_out : "";
+      const rawSecs   = activeSeconds(d.date_in, events, endStr) || 0;
+      const lunchSecs = currentLunchDeductedSeconds(d.date_in, events, endStr);
+      const netSecs   = Math.max(0, rawSecs - lunchSecs);
+      // Format as H:MM (clock-style), not decimal — "4:20" reads
+      // naturally as "four hours twenty minutes", where "4.3" needs
+      // arithmetic to translate. Guard against rounding pushing
+      // minutes up to 60.
+      let totalHrs = "";
+      if (netSecs > 0) {
+        let mins  = Math.round(netSecs / 60);
+        let hours = Math.floor(mins / 60);
+        let rem   = mins % 60;
+        totalHrs = `${hours}:${String(rem).padStart(2, "0")}`;
+      }
+
+      // Print only the actual data rows — no padding. A single empty
+      // trailing row acts as a spacer / margin for the reader (and
+      // gives a line to hand-write one extra item if needed).
+      const workData = (d.work || []).filter(w => w && String(w.description || "").trim());
+      const partsData = (d.parts || []).filter(p => p && (
+        String(p.used || "").trim() ||
+        String(p.number || "").trim() ||
+        String(p.quantity || "").trim()
+      ));
+      const workRows = workData.map((w, i) => {
+        // Only the FIRST row carries the total hours — subsequent work
+        // items don't get their own timings (the app only tracks a
+        // single job-level total), so leaving them blank keeps the
+        // sheet honest.
+        const hrs = i === 0 ? totalHrs : "";
+        return `<tr>
+          <td class="fill">${esc(w.description || "")}</td>
+          <td class="fill hrs">${esc(hrs)}</td>
+        </tr>`;
+      });
+      workRows.push(`<tr><td class="fill"></td><td class="fill hrs"></td></tr>`);
+      const partRows = partsData.map(p => {
+        const qtyStr = [p.quantity, p.unit].filter(Boolean).join(" ");
+        return `<tr>
+          <td class="fill">${esc(p.used || "")}</td>
+          <td class="fill">${esc(p.number || "")}</td>
+          <td class="fill qty">${esc(qtyStr)}</td>
+        </tr>`;
+      });
+      partRows.push(`<tr><td class="fill"></td><td class="fill"></td><td class="fill qty"></td></tr>`);
+
+      document.getElementById("print-area").innerHTML = `
+        <style>
+          /* Scoped tweaks for the paper Work Order layout — kept inline
+             so they only apply to this template and don't leak into the
+             main Work Order print. Base sizes ~1.25× the original
+             12–14px baseline, tuned for 100% Chrome print scale. */
+          #print-area .p2-header { margin-bottom: 10px; font-size: 15px; }
+          #print-area .p2-header .biz { font-weight: 700; font-size: 18px; letter-spacing: 0.02em; }
+          #print-area .p2-cust { margin-bottom: 6px; font-size: 15px; }
+          #print-area .p2-cust .row { display: flex; gap: 24px; padding: 3px 0; }
+          #print-area .p2-cust .row > div { flex: 1; }
+          #print-area .p2-cust .fill {
+            display: inline-block; min-width: 12ch;
+            border-bottom: 1px dotted #666; padding: 0 4px;
+          }
+          /* Table text — override the global 12px from the print CSS
+             for every table in this template. Row heights scale with
+             the text so the ruled areas stay writable by hand. */
+          #print-area table.p2-veh,
+          #print-area table.p2-work,
+          #print-area table.p2-parts,
+          #print-area table.p2-foot { font-size: 15px; }
+          /* Vehicle info: 3×3 grid of boxed cells. */
+          #print-area table.p2-veh td { padding: 6px 8px; height: 30px; }
+          #print-area table.p2-work td,
+          #print-area table.p2-parts td { height: 24px; padding: 3px 6px; }
+          #print-area table.p2-work col.hrs,
+          #print-area table.p2-work th.hrs   { width: 14%; }
+          #print-area table.p2-parts col.num { width: 32%; }
+          #print-area table.p2-parts col.qty { width: 14%; }
+          #print-area .p2-foot td { height: 42px; padding: 6px 8px; vertical-align: top; }
+        </style>
+
+        <div class="p2-header">
+          <div class="biz">CLEERE AUTO SERVICES</div>
+          <div>Water Rock, Midleton, Co Cork</div>
+          <div>Tel: 086 826 5599</div>
+          <div>Email: <u>cleereautoservices@gmail.com</u></div>
+        </div>
+
+        <div class="p2-cust">
+          <div class="row">
+            <div>Customer Name: <span class="fill">${esc(toStr(car.customer_name))}</span></div>
+            <div>Tel No: <span class="fill">${esc(toStr(car.customer_phone))}</span></div>
+          </div>
+          <div class="row">
+            <div>Address: <span class="fill">${esc(toStr(car.address))}</span></div>
+            <div>Email: <span class="fill">${esc(toStr(car.email))}</span></div>
+          </div>
+        </div>
+
+        <table class="p2-veh">
+          <!-- Middle column gets extra width so combined mileage
+               ("118510 km / 73641 mi") fits on one line. Layout mirrors
+               the original paper form: 3 rows, Year + Mileage down on
+               row 3. Chassis No and Date Required By dropped by
+               request — their cells stay empty (row 2 middle/right). -->
+          <colgroup>
+            <col style="width:25%;">
+            <col style="width:50%;">
+            <col style="width:25%;">
+          </colgroup>
+          <tr>
+            <td><b>Make:</b> ${esc(d.vehicle.make)}</td>
+            <td><b>Reg No:</b> ${esc(plate)}</td>
+            <td><b>Date In:</b> ${dateInBoldHtml}</td>
+          </tr>
+          <tr>
+            <td><b>Model:</b> ${esc(d.vehicle.model)}</td>
+            <td></td>
+            <td></td>
+          </tr>
+          <tr>
+            <td><b>Year:</b> ${esc(year)}</td>
+            <td><b>Mileage:</b> ${esc(mileage)}</td>
+            <td></td>
+          </tr>
+        </table>
+
+        <table class="p2-work">
+          <colgroup><col><col class="hrs"></colgroup>
+          <thead><tr><th>Work Description</th><th class="hrs">Hours</th></tr></thead>
+          <tbody>${workRows.join("")}</tbody>
+        </table>
+
+        <table class="p2-parts">
+          <colgroup><col><col class="num"><col class="qty"></colgroup>
+          <thead><tr><th>Parts Used</th><th>Parts Number</th><th class="qty">Qty</th></tr></thead>
+          <tbody>${partRows.join("")}</tbody>
+        </table>
+
+        <table class="p2-foot">
+          <tr>
+            <td rowspan="2" style="width:60%;">
+              <b>Special Instructions:</b><br>
+              <span style="white-space:pre-wrap;">${esc(notesText)}</span>
+            </td>
+            <td><b>Work Completed By:</b> ${esc(workerName)}</td>
+          </tr>
+          <tr><td><b>Date:</b> ${dateFooterBoldHtml}</td></tr>
+        </table>
+      `;
+      window.print();
+    });
+
     // ---------- previously used parts ----------
     // Lookup map: normalized part name (lowercase, trimmed) -> last-used number.
     // Populated from committed jobs (work_done / closed / legacy finished),
@@ -1926,10 +2202,14 @@
     }
     function extractEngineOilLitres(html) {
       if (!html) return null;
-      const m = html.match(/<h3>[^<]*engine[^<]*<\/h3>[\s\S]*?class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
-      if (m) return m[1].replace(",", ".");
-      const m2 = html.match(/class="amount">\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:liter|litre|l\b)/i);
-      return m2 ? m2[1].replace(",", ".") : null;
+      const rx = /<h3>[^<]*engine[^<]*<\/h3>[\s\S]*?class="amount">\s*([0-9]+(?:[.,][0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:[.,][0-9]+)?))?\s*(?:liter|litre|l\b)/i;
+      const rxAny = /class="amount">\s*([0-9]+(?:[.,][0-9]+)?)(?:\s*[-–]\s*([0-9]+(?:[.,][0-9]+)?))?\s*(?:liter|litre|l\b)/i;
+      const m = html.match(rx) || html.match(rxAny);
+      if (!m) return null;
+      // Range → lower bound only. Downstream (job qty, oil card digit,
+      // Engine header, print) all treat this as a scalar. Show the
+      // full range only in the Add Car variant chooser.
+      return m[1].replace(",", ".");
     }
     async function loadEngine() {
       try {
