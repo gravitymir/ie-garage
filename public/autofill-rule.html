@@ -225,7 +225,7 @@
     <div class="parts-table" id="services-body"></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="engine-oil-card">
     <h2>Engine oil</h2>
     <label class="oils-toggle">
       <input type="checkbox" id="oils-enabled" />
@@ -250,7 +250,7 @@
         </div>
         <div class="oef">
           <label>Quantity</label>
-          <div class="oils-qty-note">auto from oil archive</div>
+          <div class="oils-qty-note" title="Quantity comes from the engine-oil capacity in this car's oil archive — same source as the other Motor Oil rows above.">auto</div>
         </div>
         <div class="oef oef-narrow">
           <label>Unit</label>
@@ -431,32 +431,57 @@
       if (last.querySelector(".p-used").value.trim()) makeRow();
     }
 
-    function makeRow(used, quantity, unit) {
+    function makeRow(used, quantity, unit, qtyFromHistory) {
       const div = document.createElement("div");
       div.className = "parts-row";
+      // Qty column carries a small ✓history checkbox in front of the
+      // input. Ticked (default) = at autofill time we pull the qty from
+      // the most recent finished job for this car and only fall back to
+      // the number typed here if history has nothing. Unticked = always
+      // use the typed number.
       div.innerHTML = `
         <input type="text" class="p-used" placeholder="oil filter" />
         <div class="number-note" title="At autofill time, the part number is taken from the most recent finished job for this car (if any).">auto from history</div>
-        <input type="text" class="p-qty" />
+        <div class="qty-wrap" style="display:flex; align-items:center; gap:6px;">
+          <label class="qty-hist" title="Prefer quantity from this car's last finished job. Untick to always use the typed number." style="display:inline-flex; align-items:center; gap:2px; font-size:11px; color:#555; cursor:pointer;">
+            <input type="checkbox" class="p-qty-hist" />
+            <span>hist</span>
+          </label>
+          <input type="text" class="p-qty" style="flex:1; min-width:0;" />
+        </div>
         <input type="text" class="p-unit" list="unit-suggestions" />
       `;
       const usedInp = div.querySelector(".p-used");
       usedInp.value = used || "";
-      // Defaults: Quantity = "1", Unit = "pcs". They are real values (not just
-      // placeholders), so collectParts() picks them up even if the user never
-      // touched these fields.
+      // Defaults: Quantity = "1", Unit = "pcs", history-first = ON.
+      // They are real values (not just placeholders), so collectParts()
+      // picks them up even if the user never touched these fields.
       div.querySelector(".p-qty").value  = (quantity != null && quantity !== "") ? quantity : "1";
       div.querySelector(".p-unit").value = (unit != null && unit !== "")         ? unit     : "pcs";
+      div.querySelector(".p-qty-hist").checked = qtyFromHistory !== false;
       // Live: if typing into the LAST row's "Part used" makes it non-empty,
       // a fresh empty row appears right below (so there's always one to fill).
       usedInp.addEventListener("input", () => {
         const isLast = div === partsBody.lastElementChild;
         if (isLast && usedInp.value.trim() !== "") makeRow();
+        syncEngineOilVis();
       });
       // On blur: collapse empties so there's always exactly one trailing slot.
-      usedInp.addEventListener("change", normalizeRows);
+      usedInp.addEventListener("change", () => { normalizeRows(); syncEngineOilVis(); });
       partsBody.appendChild(div);
       return div;
+    }
+
+    // Engine-oil section is only meaningful when the rule actually
+    // touches oil — proxied by "did the mechanic list an oil filter
+    // among the parts?". Show/hide the whole card based on that so a
+    // "replace bulb" rule stops asking about engine-oil defaults.
+    function syncEngineOilVis() {
+      const card = document.getElementById("engine-oil-card");
+      if (!card) return;
+      const hasOilFilter = Array.from(partsBody.querySelectorAll(".p-used"))
+        .some(el => /oil\s*filter/i.test(String(el.value || "")));
+      card.style.display = hasOilFilter ? "" : "none";
     }
 
     async function load() {
@@ -469,6 +494,7 @@
         // empty form: start with one empty row in each list
         makeRow();
         makeServiceRow();
+        syncEngineOilVis();
         return;
       }
       try {
@@ -482,7 +508,7 @@
         const parts = Array.isArray(r.parts) ? r.parts : [];
         if (!parts.length) { makeRow(); }
         else {
-          parts.forEach(p => makeRow(p.used, p.quantity, p.unit));
+          parts.forEach(p => makeRow(p.used, p.quantity, p.unit, p.qty_from_history));
           // makeRow() only appends what was saved — normalizeRows enforces
           // the "always one empty trailing slot" invariant so the user
           // can add a new part on an existing rule without needing an
@@ -494,11 +520,13 @@
         const services = Array.isArray(r.services) ? r.services : [];
         services.forEach(s => makeServiceRow(typeof s === "string" ? s : (s && s.desc) || ""));
         normalizeServiceRows();
+        syncEngineOilVis();
       } catch (e) {
         statusEl.textContent = "Error: " + e.message;
         statusEl.className = "status err";
         makeRow();
         makeServiceRow();
+        syncEngineOilVis();
       }
     }
 
@@ -509,6 +537,7 @@
         number: "", // resolved from history at autofill time
         quantity: r.querySelector(".p-qty").value.trim(),
         unit: r.querySelector(".p-unit").value.trim(),
+        qty_from_history: r.querySelector(".p-qty-hist").checked,
       })).filter(p => p.used);
     }
 

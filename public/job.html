@@ -1041,17 +1041,31 @@
           .map(el => el.value.trim().toLowerCase())
           .filter(Boolean)
       );
-      const numIndex = (window.usedPartsIndex instanceof Map) ? window.usedPartsIndex : new Map();
+      const histIndex = (window.usedPartsIndex instanceof Map) ? window.usedPartsIndex : new Map();
       let added = 0;
       (Array.isArray(rule.parts) ? rule.parts : []).forEach(p => {
         const key = String(p.used || "").trim().toLowerCase();
         if (!key || existing.has(key)) return;
-        // Number: pulled from this car's finished-job history (if any).
-        // Rule's own `number` is kept as a fallback for legacy rules.
-        const historyNum = numIndex.get(key) || "";
-        const num = historyNum || String(p.number || "").trim();
-        const qty  = String(p.quantity || "").trim();
-        const unit = String(p.unit || "").trim();
+        // History value is always {number, quantity, unit} — built once
+        // by renderUsedParts. Empty object fallback keeps destructuring
+        // safe when the part has no prior job on this car.
+        const hist = histIndex.get(key) || {};
+        // Number: always prefer the history value (that's what the
+        // "auto from history" note on the rule editor promises).
+        const num  = String(hist.number || "").trim() || String(p.number || "").trim();
+        // Quantity: gated by the per-part checkbox `qty_from_history`
+        // (default true — legacy rules opt into history automatically).
+        // When on: history wins, rule's value is a fallback. When off:
+        // the rule's typed value always wins.
+        const useHistQty = p.qty_from_history !== false;
+        const histQty = String(hist.quantity || "").trim();
+        const ruleQty = String(p.quantity   || "").trim();
+        const qty  = useHistQty ? (histQty || ruleQty) : ruleQty;
+        // Unit follows the same source as quantity so "5 L" doesn't
+        // silently become "5 pcs" when history is applied.
+        const histUnit = String(hist.unit || "").trim();
+        const ruleUnit = String(p.unit    || "").trim();
+        const unit = useHistQty ? (histUnit || ruleUnit) : ruleUnit;
         if (appendPartRow(p.used || "", num, qty, unit, existing)) added++;
       });
       if (added > 0) normalizeAutoRows("parts");
@@ -1613,7 +1627,7 @@
       const LABELS = {
         open:      "● Open",
         paused:    "⏸ Paused",
-        work_done: "✓✓ Work done",
+        work_done: "✓ Work done",
       };
       const txt = LABELS[status] || "● Open";
       const el = document.getElementById("status-badge-tl");
@@ -2165,23 +2179,30 @@
         const items = Array.isArray(data.items) ? data.items : [];
         items.sort((a, b) => (b.saved_ms || 0) - (a.saved_ms || 0));
         const seen = new Map();           // for the sidebar UI ("name — number")
-        const numMap = new Map();         // for autofill lookup (name -> number)
+        const histMap = new Map();        // for autofill lookup: name -> {number, quantity, unit}
         for (const it of items) {
           const r = await fetch(`/api/cars/${encodeURIComponent(plate)}/jobs/${encodeURIComponent(it.name)}`);
           const doc = await r.json();
           // work_done is the terminal state — mechanic has committed to
-          // the part numbers used, safe to pull them into autofill history.
+          // the part numbers/qty used, safe to pull into autofill history.
           if (doc.status !== "work_done") continue;
           (Array.isArray(doc.parts) ? doc.parts : []).forEach(p => {
             const used = String(p.used || "").trim();
-            const num = String(p.number || "").trim();
-            if (!used || !num) return;
+            if (!used) return;
             const key = used.toLowerCase();
-            if (!seen.has(key)) seen.set(key, `${used} — ${num}`);
-            if (!numMap.has(key)) numMap.set(key, num);
+            const num  = String(p.number   || "").trim();
+            const qty  = String(p.quantity || "").trim();
+            const unit = String(p.unit     || "").trim();
+            // Sidebar shows "name — number"; only add if there IS a
+            // number so the list stays useful.
+            if (num && !seen.has(key)) seen.set(key, `${used} — ${num}`);
+            // Autofill map stores whatever the most recent job recorded
+            // (newest-first traversal) — a row with number-only or
+            // qty-only is still valid history.
+            if (!histMap.has(key)) histMap.set(key, { number: num, quantity: qty, unit });
           });
         }
-        window.usedPartsIndex = numMap;
+        window.usedPartsIndex = histMap;
         if (!seen.size) { el.innerHTML = `<div class="muted">No parts history.</div>`; return; }
         el.innerHTML = [...seen.values()].map(v => `<div class="used-line">${esc(v)}</div>`).join("");
       } catch (_) {

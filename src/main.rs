@@ -2174,7 +2174,20 @@ fn normalize_rule_payload(payload: &mut Value) {
                         let number = item.get("number").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
                         let quantity = item.get("quantity").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
                         let unit = item.get("unit").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-                        json!({ "used": used, "number": number, "quantity": quantity, "unit": unit })
+                        // qty_from_history: default true so legacy rules
+                        // (saved before this field existed) automatically
+                        // start using the per-car history lookup.
+                        let qty_from_history = item
+                            .get("qty_from_history")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
+                        json!({
+                            "used": used,
+                            "number": number,
+                            "quantity": quantity,
+                            "unit": unit,
+                            "qty_from_history": qty_from_history,
+                        })
                     })
                     .filter(|p| {
                         p.get("used").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false)
