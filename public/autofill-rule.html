@@ -138,6 +138,17 @@
       background: #fafafa; border: 1px dashed #ccc; border-radius: 4px;
       text-align: center;
     }
+    /* Services rows are single-column (just the labour description),
+       so they get their own grid rule rather than reusing .parts-row's
+       four-column layout. */
+    .services-head, .services-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      align-items: center;
+    }
+    .services-head { font-size: 11px; color: #555; padding: 0 4px; }
+    .services-row input { padding: 6px 8px; font-size: 13px; }
 
     .status { font-size: 13px; color: #555; margin: 6px 0; }
     .status.err { color: #c33; }
@@ -192,7 +203,6 @@
     </div>
     <datalist id="unit-suggestions">
       <option value="pcs"></option>
-      <option value="op"></option>
       <option value="L"></option>
       <option value="ml"></option>
       <option value="kg"></option>
@@ -204,6 +214,15 @@
       <option value="m"></option>
     </datalist>
     <div class="parts-table" id="parts-body"></div>
+  </div>
+
+  <div class="card">
+    <h2>Services to add</h2>
+    <div class="hint" style="margin-bottom:6px;">Labour lines with no parts (e.g. tracking after replacing wheels, road-test after a brake job). Each service is appended to the job's Work performed table when the trigger fires.</div>
+    <div class="services-head">
+      <div>Service description</div>
+    </div>
+    <div class="parts-table" id="services-body"></div>
   </div>
 
   <div class="card">
@@ -257,6 +276,7 @@
     const deleteBtn = document.getElementById("delete-btn");
     const statusEl = document.getElementById("rule-status");
     const partsBody = document.getElementById("parts-body");
+    const servicesBody = document.getElementById("services-body");
 
     function applyMode() {
       titleEl.textContent = ruleId ? "Edit Rule" : "Add Rule";
@@ -446,8 +466,9 @@
         // pre-fill the name/trigger field with it.
         const preset = (params.get("name") || "").trim();
         if (preset) document.getElementById("rule-name").value = preset;
-        // empty form: start with one empty row
+        // empty form: start with one empty row in each list
         makeRow();
+        makeServiceRow();
         return;
       }
       try {
@@ -468,10 +489,16 @@
           // explicit "+ Add" button.
           normalizeRows();
         }
+        // Services: accept either the object form {desc} or a bare string
+        // for forward-compat with future rule payloads.
+        const services = Array.isArray(r.services) ? r.services : [];
+        services.forEach(s => makeServiceRow(typeof s === "string" ? s : (s && s.desc) || ""));
+        normalizeServiceRows();
       } catch (e) {
         statusEl.textContent = "Error: " + e.message;
         statusEl.className = "status err";
         makeRow();
+        makeServiceRow();
       }
     }
 
@@ -485,6 +512,45 @@
       })).filter(p => p.used);
     }
 
+    // ---------- services (labour lines with no parts) ----------
+    // Same "always one empty trailing slot" pattern as parts, just with
+    // one column (the description) instead of four.
+    function normalizeServiceRows() {
+      const rows = Array.from(servicesBody.querySelectorAll(".services-row"));
+      for (let i = 0; i < rows.length - 1; i++) {
+        const d = rows[i].querySelector(".svc-desc");
+        if (d && !d.value.trim()) rows[i].remove();
+      }
+      if (!servicesBody.querySelector(".services-row")) {
+        makeServiceRow();
+        return;
+      }
+      const after = Array.from(servicesBody.querySelectorAll(".services-row"));
+      const last = after[after.length - 1];
+      if (last.querySelector(".svc-desc").value.trim()) makeServiceRow();
+    }
+
+    function makeServiceRow(desc) {
+      const div = document.createElement("div");
+      div.className = "services-row";
+      div.innerHTML = `<input type="text" class="svc-desc" placeholder="e.g. tracking" />`;
+      const inp = div.querySelector(".svc-desc");
+      inp.value = desc || "";
+      inp.addEventListener("input", () => {
+        const isLast = div === servicesBody.lastElementChild;
+        if (isLast && inp.value.trim() !== "") makeServiceRow();
+      });
+      inp.addEventListener("change", normalizeServiceRows);
+      servicesBody.appendChild(div);
+      return div;
+    }
+
+    function collectServices() {
+      return Array.from(servicesBody.querySelectorAll(".services-row"))
+        .map(r => ({ desc: r.querySelector(".svc-desc").value.trim() }))
+        .filter(s => s.desc);
+    }
+
     document.getElementById("save-btn").addEventListener("click", async () => {
       const value = document.getElementById("rule-name").value.trim();
       const body = {
@@ -492,6 +558,7 @@
         trigger: value,
         applies_to: collectAppliesTo(),
         parts: collectParts(),
+        services: collectServices(),
         oils: collectOils(),
       };
       if (!value) { statusEl.textContent = "Name / trigger is required."; statusEl.className = "status err"; return; }

@@ -160,6 +160,42 @@
         <div class="add-row"><button data-add="docs">+ Add document</button></div>
       </div>
 
+      <!-- Per-worker chat notification preferences. Used by chat.js to
+           hide events this worker isn't interested in. Everything on
+           by default so the mechanic sees the full workshop feed until
+           they explicitly mute noise. -->
+      <div class="card">
+        <h2>Chat notifications</h2>
+        <div class="muted" style="margin-bottom:8px;">Turn off the events you don't want to see in the chat feed. Affects only your own view — events still fire for other workers.</div>
+        <!-- Emoji glyphs match chat.js's EVENT_META so the mechanic sees
+             the same icon here that lands next to the event in the feed. -->
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="cn-job-started" checked />
+          <span style="font-size:18px; width:22px; text-align:center;">🚗</span>
+          <span>Car taken in for work <span class="muted">(job started)</span></span>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="cn-job-finished" checked />
+          <span style="font-size:18px; width:22px; text-align:center;">✅</span>
+          <span>Work done</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="cn-job-reopened" checked />
+          <span style="font-size:18px; width:22px; text-align:center;">📣</span>
+          <span>Job reopened</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="cn-stock-arrival" checked />
+          <span style="font-size:18px; width:22px; text-align:center;">🛞</span>
+          <span>Stock arrival</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="cn-low-stock" checked />
+          <span style="font-size:18px; width:22px; text-align:center;">📦</span>
+          <span>Low stock</span>
+        </label>
+      </div>
+
       <div class="row-btns">
         <button id="save-btn">Save</button>
         <button class="danger" id="delete-btn" style="display:none;">Delete worker</button>
@@ -258,6 +294,15 @@
         document.getElementById("address").value = toStr(worker.address);
         document.getElementById("postcode").value = toStr(worker.postcode);
         document.getElementById("password").value = toStr(worker.password);
+        // Chat-notification prefs — default to true when the field is
+        // missing (fresh worker or pre-migration record) so a new
+        // mechanic sees the full workshop feed until they mute things.
+        const cn = (k) => worker[k] === false ? false : true;
+        document.getElementById("cn-job-started").checked   = cn("chat_notify_job_started");
+        document.getElementById("cn-job-finished").checked  = cn("chat_notify_job_finished");
+        document.getElementById("cn-job-reopened").checked  = cn("chat_notify_job_reopened");
+        document.getElementById("cn-stock-arrival").checked = cn("chat_notify_stock_arrival");
+        document.getElementById("cn-low-stock").checked     = cn("chat_notify_low_stock");
         (Array.isArray(worker.skills) ? worker.skills : []).forEach(s => addListRow("skills", s));
         (Array.isArray(worker.documents) ? worker.documents : []).forEach(d => addListRow("docs", d));
         refreshPhoto(worker.photo, worker.photo_updated_ms);
@@ -296,6 +341,11 @@
         skills: collectList("skills"),
         documents: collectList("docs"),
         password: document.getElementById("password").value,
+        chat_notify_job_started:   document.getElementById("cn-job-started").checked,
+        chat_notify_job_finished:  document.getElementById("cn-job-finished").checked,
+        chat_notify_job_reopened:  document.getElementById("cn-job-reopened").checked,
+        chat_notify_stock_arrival: document.getElementById("cn-stock-arrival").checked,
+        chat_notify_low_stock:     document.getElementById("cn-low-stock").checked,
       });
       showOverlay("Saving…");
       try {

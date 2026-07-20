@@ -233,27 +233,20 @@
     // current_count goes up, low_stock when it crosses below min_count).
     const snapshot = { current_count: 0, min_count: 0, name: "" };
 
-    // Post a stock-related event to the chat feed, gated by the matching
-    // Settings → Chat toggle. Called from the save handler after a
-    // successful PUT/POST.
+    // Post a stock-related event to the chat feed. The per-worker mute
+    // filter now lives on the consumer side (chat.js), so this always
+    // publishes with the appropriate notify_key.
     async function fireStockEvent(kind, itemName, oldCur, newCur, minCount) {
-      if (!window.GarageChat || !window.GarageSettings) return;
-      let s;
-      try { s = await window.GarageSettings.get(); } catch (_) { return; }
-      if (!s) return;
-      const flag = kind === "arrival"   ? "chat_notify_stock_arrival"
-                 : kind === "low_stock" ? "chat_notify_low_stock"
-                 : null;
-      if (!flag || s[flag] === false) return;
+      if (!window.GarageChat) return;
       const label = itemName || "Item";
       if (kind === "arrival") {
         const delta = newCur - oldCur;
         const text = `${label}: stock arrival, ${oldCur} → ${newCur}` +
                      (delta > 0 ? ` (+${delta})` : "");
-        window.GarageChat.event(text, "wheels");
+        window.GarageChat.event(text, "wheels", "stock_arrival");
       } else {
         const text = `${label}: low stock, ${newCur} left (min ${minCount}).`;
-        window.GarageChat.event(text, "parts");
+        window.GarageChat.event(text, "parts", "low_stock");
       }
     }
 

@@ -49,10 +49,15 @@
     tbody tr { cursor: pointer; }
     tbody tr:hover { background: #eef5fa; }
     .plate { color: #3275ac; font-weight: 900; }
-    /* Compact width for the "Last activity" cell — fits "DD.MM.YYYY HH:MM"
-       (16 chars) plus a status mark and a space. */
-    .col-last { width: 20ch; white-space: nowrap; }
-    .col-plate { width: 10ch; }
+    /* Split the "what happened on this job" column into small dedicated
+       cells so each header (status / # / km / date) can stand alone.
+       The mileage cell only holds a number now — the "km" label lives
+       once at the top of its column. */
+    .col-status { width: 3em; text-align: center; }
+    .col-jobno  { width: 3em; text-align: center; }
+    .col-odo    { width: 7em; text-align: right; white-space: nowrap; }
+    .col-last   { width: 17ch; white-space: nowrap; }
+    .col-plate  { width: 10ch; }
     .vehicle-cell .mk { color: #555; font-size: 0.85em; margin-right: 4px; }
     /* Status marks on the left of the "Last activity" cell — sized 2× so
        they're readable at a glance across the whole list. line-height 1 +
@@ -76,6 +81,14 @@
       color: #555;
       min-width: 2ch; text-align: center;
       margin-right: 8px; margin-left: 4px;
+    }
+    /* Odometer reading at the time this job was worked — sits in its
+       own column (header "km"), same digit style as .jobno but a
+       touch smaller. */
+    .odo {
+      display: inline-block; vertical-align: middle;
+      font-family: inherit; font-weight: 700; font-size: 1.2em;
+      color: #555;
     }
     .vehicle-cell { font-size: 12px; }
     .vehicle-cell .mk    { color: #555; }
@@ -139,6 +152,24 @@
       <a class="home" href="/index.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; Home</a>
       <h1>Jobs</h1>
     </div>
+    <!-- Odometer capture — mirror of /cars.html. The mechanic types the
+         reading BEFORE clicking through to a job page, and it propagates
+         via ?km=…&mi=… so the eventual "Create new job" click (from
+         car.html or from a frozen job.html) pre-fills the mileage. -->
+    <div class="odo-strip" style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+      <div class="odo-slot" style="position:relative; width:150px; height:34px;">
+        <input type="number" id="odo-km" min="0" step="1" placeholder="km"
+               style="width:100%; height:100%; box-sizing:border-box; padding:4px 10px; border:1px solid #bbb; border-radius:4px; font-size:18px; font-family:inherit;" />
+        <span id="odo-label-km"
+              style="position:absolute; inset:0; display:none; align-items:center; justify-content:flex-end; padding-right:10px; font-size:20px; font-weight:700; color:#000; pointer-events:none;">mi</span>
+      </div>
+      <div class="odo-slot" style="position:relative; width:150px; height:34px;">
+        <input type="number" id="odo-mi" min="0" step="1" placeholder="mi"
+               style="width:100%; height:100%; box-sizing:border-box; padding:4px 10px; border:1px solid #bbb; border-radius:4px; font-size:18px; font-family:inherit;" />
+        <span id="odo-label-mi"
+              style="position:absolute; inset:0; display:none; align-items:center; justify-content:flex-start; padding-left:10px; font-size:20px; font-weight:700; color:#000; pointer-events:none;">km</span>
+      </div>
+    </div>
   </div>
 
   <div class="toolbar">
@@ -158,6 +189,9 @@
     <table>
       <thead>
         <tr>
+          <th class="col-status"></th>
+          <th class="col-jobno">#</th>
+          <th class="col-odo">km</th>
           <th class="col-last">Last activity</th>
           <th class="col-plate">Plate</th>
           <th>Vehicle</th>
@@ -173,6 +207,42 @@
     const statusEl = document.getElementById("status");
     const searchEl = document.getElementById("search");
     let items = [];
+
+    // Odometer capture — same one-unit rule as /cars.html: only ONE of
+    // km/mi is ever populated at a time; the other slot swaps its input
+    // for a big black label naming the ACTIVE unit ("km" left-aligned
+    // in the mi slot, "mi" right-aligned in the km slot).
+    (function () {
+      const odoKm = document.getElementById("odo-km");
+      const odoMi = document.getElementById("odo-mi");
+      const labelKm = document.getElementById("odo-label-km"); // sits in KM slot, shows "mi"
+      const labelMi = document.getElementById("odo-label-mi"); // sits in MI slot, shows "km"
+      if (!odoKm || !odoMi) return;
+      function refreshVis() {
+        const kmHas = odoKm.value.trim() !== "";
+        const miHas = odoMi.value.trim() !== "";
+        const hideKm = miHas && !kmHas;
+        const hideMi = kmHas && !miHas;
+        odoKm.style.visibility  = hideKm ? "hidden" : "visible";
+        odoMi.style.visibility  = hideMi ? "hidden" : "visible";
+        if (labelKm) labelKm.style.display = hideKm ? "flex" : "none";
+        if (labelMi) labelMi.style.display = hideMi ? "flex" : "none";
+      }
+      odoKm.addEventListener("input", refreshVis);
+      odoMi.addEventListener("input", refreshVis);
+      refreshVis();
+    })();
+
+    // Query-string tail appended to every row's job.html URL — at most
+    // one of km/mi is present (the visible-input rule above ensures it).
+    function odoQS() {
+      const km = document.getElementById("odo-km");
+      const mi = document.getElementById("odo-mi");
+      const parts = [];
+      if (km && km.value.trim()) parts.push("km=" + encodeURIComponent(km.value.trim()));
+      if (mi && mi.value.trim()) parts.push("mi=" + encodeURIComponent(mi.value.trim()));
+      return parts.length ? "&" + parts.join("&") : "";
+    }
 
     function fmt(ms) {
       if (!ms) return "";
@@ -252,14 +322,23 @@
         // legacy name; shouldn't happen after the unified rename.
         const m = String(it.name || "").match(/_(\d+)\.json$/i);
         const jobNoStr = m ? m[1] : "?";
+        // Mileage at the time of servicing — parsed from the raw string
+        // and truncated to whole km. The "km" unit label lives once in
+        // the column header now, so the cell is a plain number.
+        const kmRaw = String(it.kilometrage || "").trim();
+        const kmNum = kmRaw ? Math.trunc(Number(kmRaw.replace(",", "."))) : NaN;
+        const odoCell = Number.isFinite(kmNum) && kmNum > 0 ? String(kmNum) : "";
         tr.innerHTML = `
-          <td class="col-last">${statusBadge(it.status)} <span class="jobno">${jobNoStr}</span> ${fmt(lastMs)}</td>
+          <td class="col-status">${statusBadge(it.status)}</td>
+          <td class="col-jobno"><span class="jobno">${jobNoStr}</span></td>
+          <td class="col-odo">${odoCell ? `<span class="odo">${odoCell}</span>` : ""}</td>
+          <td class="col-last">${fmt(lastMs)}</td>
           <td class="plate col-plate">${it.plate || ""}</td>
           <td class="vehicle-cell">${vehicleHtml}</td>
           <td>${it.worker_name || ""}</td>
         `;
         tr.addEventListener("click", () => {
-          window.location.href = `/job.html?plate=${encodeURIComponent(it.plate)}&file=${encodeURIComponent(it.name)}`;
+          window.location.href = `/job.html?plate=${encodeURIComponent(it.plate)}&file=${encodeURIComponent(it.name)}${odoQS()}`;
         });
         rows.appendChild(tr);
       });

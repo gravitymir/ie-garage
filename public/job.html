@@ -59,38 +59,13 @@
       padding: 14px; margin-bottom: 16px;
     }
     .card h2 { margin: 0 0 10px; font-size: 1rem; color: #555; }
-    /* Header row that holds a section title plus an inline action button
-       (currently the Notes mic). Keeps the button flush-right on the same
-       line as the h2 without breaking the existing "card h2" layout. */
+    /* Header row for a section title plus an inline action button. Kept
+       around in case another card grows an inline control later. */
     .card .h2-row {
       display: flex; align-items: center; justify-content: space-between;
       gap: 10px; margin: 0 0 10px;
     }
     .card .h2-row h2 { margin: 0; }
-    /* Mic button next to Notes: circular icon-only button. Turns red
-       and pulses while listening so a quick glance tells you it's on.
-       Disabled state applies when the browser has no SpeechRecognition. */
-    .mic-btn {
-      width: 32px; height: 32px; padding: 0;
-      border: 1px solid #bbb; border-radius: 50%;
-      background: #fff; cursor: pointer;
-      display: inline-flex; align-items: center; justify-content: center;
-      color: #555; flex: 0 0 auto;
-    }
-    .mic-btn:hover { border-color: #3275ac; color: #3275ac; }
-    .mic-btn.on {
-      background: #c33; color: #fff; border-color: #c33;
-      animation: mic-pulse 1.2s infinite;
-    }
-    .mic-btn:disabled {
-      opacity: 0.4; cursor: not-allowed;
-      border-color: #ccc; color: #999;
-    }
-    .mic-btn svg { width: 18px; height: 18px; display: block; }
-    @keyframes mic-pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(204,51,51,0.6); }
-      50%      { box-shadow: 0 0 0 8px rgba(204,51,51,0); }
-    }
 
     .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
     .field label { font-size: 12px; color: #555; }
@@ -298,6 +273,10 @@
     #pause-btn     { flex-grow: 2; }
     #work-done-btn { flex-grow: 1; }
     #reopen-btn    { flex-grow: 2; }
+    /* new-job-btn takes exactly the same slot as Reopen — either one is
+       visible at a time depending on whether the doc is today's Work
+       done (Reopen) or a frozen past-day one (Create new job). */
+    #new-job-btn   { flex-grow: 2; }
     /* Work done — mechanic-side finish. Plain white / black outline to look
        distinct from the action-coloured Save and Pause/Resume buttons. Doc
        stays editable after this (QC / test drive can still fix things). */
@@ -470,10 +449,11 @@
           <button id="pause-btn" class="secondary">Pause</button>
           <button id="work-done-btn">Done</button>
           <!-- Reopen shows only while Work done was stamped TODAY (local
-               time). Once the day rolls over the document freezes: Reopen
-               disappears and a "Create new job" button takes its place,
-               which spawns a fresh job on the same car. -->
+               time). Once the day rolls over the document freezes:
+               Reopen disappears and the "Create new job" button takes
+               its exact slot, which spawns a fresh job on the same car. -->
           <button id="reopen-btn" style="display:none;">Reopen</button>
+          <button id="new-job-btn" style="display:none;">Create new job</button>
         </div>
       </div>
 
@@ -491,7 +471,6 @@
           </div>
           <datalist id="part-unit-suggestions">
             <option value="pcs"></option>
-            <option value="op"></option>
             <option value="L"></option>
             <option value="ml"></option>
             <option value="kg"></option>
@@ -506,29 +485,13 @@
         </div>
 
         <div class="card">
-          <div class="h2-row">
-            <h2>Notes</h2>
-            <button type="button" id="notes-mic" class="mic-btn"
-                    title="Dictate a note (Web Speech API)"
-                    aria-label="Dictate a note">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="9" y="2" width="6" height="12" rx="3"/>
-                <path d="M5 10a7 7 0 0 0 14 0"/>
-                <line x1="12" y1="19" x2="12" y2="22"/>
-                <line x1="8"  y1="22" x2="16" y2="22"/>
-              </svg>
-            </button>
-          </div>
+          <h2>Notes</h2>
           <div class="table" id="notes-body"></div>
         </div>
       </div>
     </div>
 
     <div class="row-btns">
-      <!-- Frozen-doc replacement for Save/Pause/Done — spawns a fresh
-           job on the same car. Visibility flipped by updateStatusUI. -->
-      <button id="new-job-btn" style="display:none;">Create new job</button>
       <button class="secondary" id="print-btn">Print</button>
       <!-- Second Print button, different template (to be defined). -->
       <button class="secondary" id="print2-btn">Print (mode 2)</button>
@@ -561,7 +524,17 @@
 
   <script>
     // ---------- helpers ----------
-    function sanitizePlate(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+    // Same Cyrillic → Latin lookalike swap as cars.html — mechanic
+    // typing with the Russian keyboard on turns Latin C into Cyrillic С
+    // silently, which the strip below would then drop.
+    const _CYR_TO_LAT = {
+      "А":"A","В":"B","С":"C","Е":"E","Н":"H","К":"K","М":"M","О":"O","Р":"P","Т":"T","Х":"X","У":"Y",
+      "а":"A","в":"B","с":"C","е":"E","н":"H","к":"K","м":"M","о":"O","р":"P","т":"T","х":"X","у":"Y",
+    };
+    function sanitizePlate(s) {
+      return String(s || "").replace(/[А-яЁё]/g, ch => _CYR_TO_LAT[ch] || ch)
+        .toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
     function pad(n) { return String(n).padStart(2, "0"); }
     function nowDateTime() {
       const d = new Date();
@@ -576,15 +549,10 @@
     // (Work done is the terminal state now — there's no separate close
     // event to fire.)
     async function fireChatEvent(kind) {
-      if (!window.GarageChat || !window.GarageSettings) return;
-      let s;
-      try { s = await window.GarageSettings.get(); } catch (_) { return; }
-      if (!s) return;
-      const flag = kind === "job_started"  ? "chat_notify_job_started"
-                 : kind === "job_finished" ? "chat_notify_job_finished"
-                 : kind === "job_reopened" ? "chat_notify_job_reopened"
-                 : null;
-      if (!flag || s[flag] === false) return;
+      if (!window.GarageChat) return;
+      // Events always publish now — the mute filter has moved to the
+      // consumer side (chat.js drops items whose notify_key is muted
+      // for the current worker). No more sender-side gating.
       // Best-effort vehicle blurb so the feed reads naturally.
       const mk = String((car && car.make) || "").trim();
       const md = String((car && car.model) || "").trim();
@@ -600,15 +568,16 @@
       const plateLink = `[${plate}](${carHref})`;
       const label = vehicle ? `${plateLink} (${vehicle})` : plateLink;
       const verb = (text) => jobHref ? `[${text}](${jobHref})` : text;
-      // Kind → (text, GarageChat.event kind). Keeping distinct wording per
-      // stage so the feed reads as a narrative when you scan through.
+      // Kind → (text, GarageChat.event kind, notify_key). Keeping
+      // distinct wording per stage so the feed reads as a narrative when
+      // you scan through.
       const map = {
-        job_started:  { text: `${label} checked in — ${verb("job started")}.`, evKind: "checkin" },
-        job_finished: { text: `${label} — ${verb("job done")}.`,               evKind: "done"    },
-        job_reopened: { text: `${label} — ${verb("job reopened")}.`,           evKind: "generic" },
+        job_started:  { text: `${label} checked in — ${verb("job started")}.`, evKind: "checkin", nk: "job_started"  },
+        job_finished: { text: `${label} — ${verb("job done")}.`,               evKind: "done",    nk: "job_finished" },
+        job_reopened: { text: `${label} — ${verb("job reopened")}.`,           evKind: "generic", nk: "job_reopened" },
       };
       const m = map[kind];
-      if (m) window.GarageChat.event(m.text, m.evKind);
+      if (m) window.GarageChat.event(m.text, m.evKind, m.nk);
     }
 
     // Top-bar "at a glance" clock — DD.MM HH:MM. No year, no seconds:
@@ -1087,6 +1056,28 @@
       });
       if (added > 0) normalizeAutoRows("parts");
 
+      // Services: labour lines with no parts (e.g. tracking after
+      // replacing wheels). Appended to Work performed, deduplicated
+      // against whatever the mechanic already typed there — so
+      // re-typing the trigger after manually deleting a service line
+      // doesn't resurrect it.
+      const existingWork = new Set(
+        Array.from(document.querySelectorAll("#work-body .trow .desc"))
+          .map(el => el.value.trim().toLowerCase())
+          .filter(Boolean)
+      );
+      let addedWork = 0;
+      (Array.isArray(rule.services) ? rule.services : []).forEach(s => {
+        const desc = String((s && s.desc) || s || "").trim();
+        if (!desc) return;
+        const key = desc.toLowerCase();
+        if (existingWork.has(key)) return;
+        addRow("work", { desc });
+        existingWork.add(key);
+        addedWork++;
+      });
+      if (addedWork > 0) normalizeAutoRows("work");
+
       // Remember that we already applied this trigger for this input so the
       // follow-up `change` event (or stray duplicate `input`) doesn't re-fire.
       lastAutofilledFor.set(el, norm);
@@ -1233,9 +1224,15 @@
                         : (typeof spec === "string"          ? String(spec).trim() : "");
         const olderNumber = (spec && typeof spec === "object") ? String(spec.number || "").trim() : "";
         if (olderYears > 0 && olderUsed) {
+          // Prefer the plate — that's the ACTUAL car's registration
+          // year. The MPMoil variant's `year_from` is the start of the
+          // model's production window (e.g. 2018 for an Expert whose
+          // production ran 2018-2025), NOT the year of this particular
+          // car, so using it made a 2023 Peugeot look 8 years old.
           const yf = Number(
+            extractYearFromPlate(plate) ||
             (car && car.mpmoil_variant && car.mpmoil_variant.year_from) ||
-            extractYearFromPlate(plate) || 0
+            0
           );
           if (yf > 0) {
             const ageYears = (new Date()).getFullYear() - yf;
@@ -1645,18 +1642,51 @@
         pb.style.display = "none";
       }
 
-      // Save + Work done + Reopen available only while the doc is
-      // editable. On a frozen doc only "Create new job" and Print
-      // remain — the mechanic starts a fresh job on the same car
-      // instead of resurrecting yesterday's paperwork.
-      show("save-btn",      !isFrozen);
+      // Save disappears the moment the doc is Work done — the mechanic
+      // shouldn't be able to keep tweaking parts / notes without an
+      // explicit Reopen. Same reasoning applies for the fields
+      // themselves (see applyLockState below).
+      show("save-btn",      !isWorkDone);
       show("work-done-btn", isOpen || isPaused);
       show("reopen-btn",    isWorkDone && !isFrozen);
       show("new-job-btn",   isFrozen);
 
+      // Freeze / thaw the whole editable surface based on status.
+      // Every Work done path (today OR frozen) locks; Open / Paused
+      // unlocks. Reopen therefore restores editability automatically —
+      // it doesn't need to call anything separately.
+      applyLockState(isWorkDone);
+
       // Live-tick only while Open.
       if (isOpen) startTotalTick(); else stopTotalTick();
       renderTimeline();
+    }
+
+    // Lock (readonly + hide add-slots) or unlock the whole job document.
+    // Called from updateStatusUI whenever status changes — no need to
+    // invoke separately from Reopen / Work done handlers.
+    function applyLockState(locked) {
+      document.querySelectorAll("#job input, #job textarea").forEach(i => {
+        i.readOnly = locked;
+      });
+      const ws = document.getElementById("worker-select");
+      if (ws) ws.disabled = locked;
+      document.querySelectorAll("#job [data-add], #job .rm").forEach(b => {
+        b.style.display = locked ? "none" : "";
+      });
+      // Empty trailing "add-slot" rows in auto-managed tables — hide
+      // them while locked so the doc reads as a static record; restore
+      // when unlocked so the mechanic can pick up where they left off.
+      ["work-body", "parts-body", "notes-body"].forEach(id => {
+        const body = document.getElementById(id);
+        if (!body) return;
+        body.querySelectorAll(".trow").forEach(r => {
+          const firstInp = r.querySelector("input, textarea");
+          const empty = !firstInp || !firstInp.value.trim();
+          if (locked && empty) r.style.display = "none";
+          else                 r.style.display = "";
+        });
+      });
     }
 
     // Without an assigned worker the job is a draft: Save/Print/Pause/
@@ -1699,17 +1729,8 @@
       updateDraftState();
     }
 
-    // Lock the job from editing once it is Frozen — i.e. Work done was
-    // stamped on a previous calendar day. Reopen never comes back on a
-    // frozen doc; only Print and Create-new-job stay live. The button
-    // visibility is already handled by updateStatusUI (isFrozen branch);
-    // this function just kills text editability.
-    function lockUI() {
-      document.querySelectorAll("#job input, #job textarea").forEach(i => { i.readOnly = true; });
-      document.querySelectorAll("#job [data-add], #job .rm").forEach(b => { b.style.display = "none"; });
-      document.getElementById("worker-select").disabled = true;
-      updateStatusUI();
-    }
+    // Lock/unlock is folded into updateStatusUI via applyLockState —
+    // no standalone helper needed anymore.
 
     document.getElementById("save-btn").addEventListener("click", (ev) => saveJob(ev.currentTarget));
 
@@ -1788,7 +1809,15 @@
     // the mechanic to a fresh /job.html for the same car — the old
     // document stays on disk as an immutable historical record.
     document.getElementById("new-job-btn").addEventListener("click", () => {
-      window.location.href = `/job.html?plate=${encodeURIComponent(plate)}`;
+      // Forward odometer capture from the incoming URL (came in via
+      // /cars.html or /jobs.html) into the fresh job so its mileage
+      // field pre-fills. Only ONE of km/mi is ever present.
+      const incoming = new URLSearchParams(window.location.search);
+      const odoParts = [];
+      if (incoming.get("km")) odoParts.push("km=" + encodeURIComponent(incoming.get("km")));
+      if (incoming.get("mi")) odoParts.push("mi=" + encodeURIComponent(incoming.get("mi")));
+      const tail = odoParts.length ? "&" + odoParts.join("&") : "";
+      window.location.href = `/job.html?plate=${encodeURIComponent(plate)}${tail}`;
     });
 
     // ---------- delete job (bottom-of-page danger zone) ----------
@@ -2398,19 +2427,29 @@
           status = s;
           workDoneMs = Number(data.work_done_ms) || 0;
           savedWorkerId = data.worker_id || "";
-          // Frozen documents get their inputs disabled up-front so the
-          // read-only look is instant. isWorkDoneToday reads workDoneMs
-          // set above.
-          if (status === "work_done" && !isWorkDoneToday()) {
-            lockUI();
-          } else {
-            updateStatusUI();
-          }
+          // updateStatusUI now handles the lock state via applyLockState —
+          // Work done (today OR frozen) locks the inputs, Open / Paused
+          // unlocks. No need for a special case branch anymore.
+          updateStatusUI();
         } catch (e) { setStatus("Error loading job: " + e.message, "err"); fillJob({}); }
       } else {
         fillJob({}); // new job: now() + one empty row each
         predictJobNo();
         updateStatusUI();
+        // Odometer prefill from URL — the mechanic typed the reading on
+        // /cars.html before picking the car and it was carried through
+        // /car.html into this fresh job. Dispatch an "input" event so the
+        // existing km↔mi cross-fill (defined higher up) populates the
+        // other unit automatically — one code path, no duplication.
+        const odoKm = params.get("km");
+        const odoMi = params.get("mi");
+        if (odoKm && !document.getElementById("mileage-km").value.trim()) {
+          document.getElementById("mileage-km").value = odoKm;
+          document.getElementById("mileage-km").dispatchEvent(new Event("input", { bubbles: true }));
+        } else if (odoMi && !document.getElementById("mileage-mi").value.trim()) {
+          document.getElementById("mileage-mi").value = odoMi;
+          document.getElementById("mileage-mi").dispatchEvent(new Event("input", { bubbles: true }));
+        }
       }
       await loadWorkers();
     }
@@ -2422,98 +2461,6 @@
     document.getElementById("plate-input").addEventListener("keydown", (e) => {
       if (e.key === "Enter") document.getElementById("plate-open").click();
     });
-
-    // ---------- voice-to-text mic for the Notes card ----------
-    // Uses the browser's built-in Web Speech API (Chrome/Edge/Safari). No
-    // API key, no external call from the server. Language comes from
-    // settings.json (voice_input_lang) and can be changed in Settings →
-    // Voice input. Firefox needs media.webspeech.recognition.enable turned
-    // on manually, so we gracefully disable the button when the API isn't
-    // available rather than throwing.
-    (function wireNotesMic() {
-      const btn = document.getElementById("notes-mic");
-      if (!btn) return;
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) {
-        btn.disabled = true;
-        btn.title = "Voice input isn't available in this browser (try Chrome, Edge or Safari)";
-        return;
-      }
-      let rec = null;
-      let langCached = "en-US";
-      // Fetch the language once. If the settings call fails we keep the
-      // en-US default — dictation still works, just in the wrong language,
-      // which is the least bad failure mode.
-      fetch("/api/settings")
-        .then(r => r.ok ? r.json() : null)
-        .then(s => { if (s && s.voice_input_lang) langCached = s.voice_input_lang; })
-        .catch(() => {});
-
-      // Pick the textarea we'll stream into. Preference order:
-      //   1. Whatever note textarea currently has focus (mid-typing user).
-      //   2. The trailing empty auto-slot at the end of notes-body.
-      //   3. Whatever last note textarea exists.
-      // After we append, normalizeAutoRows("notes") makes sure a fresh
-      // empty add-slot follows the row we just wrote into.
-      function pickTarget() {
-        const active = document.activeElement;
-        if (active && active.classList && active.classList.contains("nt")
-            && active.closest("#notes-body")) return active;
-        const all = document.querySelectorAll("#notes-body .nt");
-        for (let i = all.length - 1; i >= 0; i--) {
-          if (!all[i].value.trim()) return all[i];
-        }
-        return all[all.length - 1] || null;
-      }
-
-      function stopMic() { if (rec) { try { rec.stop(); } catch (_) {} } }
-
-      btn.addEventListener("click", () => {
-        if (rec) { stopMic(); return; }
-        const target = pickTarget();
-        if (!target) {
-          setStatus("No note field to write into.", "err");
-          return;
-        }
-        rec = new SR();
-        rec.lang = langCached || "en-US";
-        rec.continuous = true;
-        rec.interimResults = false;   // only commit final chunks — simpler
-        rec.onresult = (ev) => {
-          let piece = "";
-          for (let i = ev.resultIndex; i < ev.results.length; i++) {
-            const r = ev.results[i];
-            if (r.isFinal) piece += r[0].transcript + " ";
-          }
-          if (!piece) return;
-          const sep = target.value && !/\s$/.test(target.value) ? " " : "";
-          target.value = target.value + sep + piece;
-          // Let the auto-row machinery know the row now has content, so a
-          // new empty slot appears below.
-          if (typeof normalizeAutoRows === "function") normalizeAutoRows("notes");
-        };
-        rec.onerror = (ev) => {
-          // "no-speech" fires on silence timeout — that's an idle end, not
-          // a real error, so we don't shove a red banner at the user for it.
-          if (ev.error && ev.error !== "no-speech" && ev.error !== "aborted") {
-            setStatus("Voice input error: " + ev.error, "err");
-          }
-        };
-        rec.onend = () => {
-          rec = null;
-          btn.classList.remove("on");
-          btn.title = "Dictate a note (Web Speech API)";
-        };
-        btn.classList.add("on");
-        btn.title = "Listening — tap to stop";
-        try { rec.start(); }
-        catch (e) {
-          rec = null;
-          btn.classList.remove("on");
-          setStatus("Could not start voice input: " + e.message, "err");
-        }
-      });
-    })();
 
     init();
   </script>

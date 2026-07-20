@@ -584,13 +584,61 @@
     return `${day}.${month}.${year} ${weekday}`;
   }
 
+  // Per-worker notification filter. Reads the currently signed-in
+  // worker's `chat_notify_*` prefs (fetched lazily by workerMuteSet)
+  // and drops events whose `notify_key` is in the muted set. Messages
+  // (no notify_key) and events without a key always pass through.
+  function filterByWorkerPrefs(items) {
+    const muted = workerMuteSet();
+    if (!muted || !muted.size) return items;
+    return items.filter(it => {
+      const nk = it && typeof it.notify_key === "string" ? it.notify_key.trim() : "";
+      return !nk || !muted.has(nk);
+    });
+  }
+
+  // Set of notify_key strings the current worker has muted, or null
+  // while we haven't fetched their record yet (in which case NOTHING
+  // is muted — the mechanic sees the full feed). Cached until logout /
+  // worker switch resets it.
+  let mutedKeysCache = null;
+  let mutedKeysFor  = "";
+  function workerMuteSet() {
+    const w = typeof window.currentWorker === "function" ? window.currentWorker() : null;
+    const id = (w && w.id) || "";
+    if (id !== mutedKeysFor) {
+      mutedKeysCache = null;
+      mutedKeysFor   = id;
+      if (id) {
+        fetch(`/api/workers/${encodeURIComponent(id)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (!data || mutedKeysFor !== id) return;
+            const s = new Set();
+            const check = (key, flag) => { if (data[flag] === false) s.add(key); };
+            check("job_started",   "chat_notify_job_started");
+            check("job_finished",  "chat_notify_job_finished");
+            check("job_reopened",  "chat_notify_job_reopened");
+            check("stock_arrival", "chat_notify_stock_arrival");
+            check("low_stock",     "chat_notify_low_stock");
+            mutedKeysCache = s;
+            // New prefs may hide items already on screen — repaint.
+            try { render(); } catch (_) {}
+          })
+          .catch(() => {});
+      }
+    }
+    return mutedKeysCache;
+  }
+
   function render() {
     const list = document.getElementById("chat-feed");
     if (!list) return;
     // Retention is enforced server-side now — anything the server sent us
     // is fair game to display. We may still hide items past the window
     // when `delete=false` (server keeps everything, client just hides).
-    applyRetention(feed).then(visible => {
+    applyRetention(feed).then(all => {
+      const visible = filterByWorkerPrefs(all);
       if (!visible.length) {
         list.innerHTML = `<div class="chat-empty">No messages yet.</div>`;
         return;
@@ -694,12 +742,12 @@
     } catch (_) { return null; }
   }
 
-  async function postEvent(text, kind) {
+  async function postEvent(text, kind, notify_key) {
     try {
       const res = await fetch("/api/chat/event", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ text, kind }),
+        body: JSON.stringify({ text, kind, notify_key: notify_key || "" }),
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -916,10 +964,10 @@
       if (!text) return Promise.resolve(null);
       return postMessage(String(text), author || "System");
     },
-    event(text, kind) {
+    event(text, kind, notify_key) {
       if (!text) return Promise.resolve(null);
       const k = EVENT_META[kind] ? kind : "generic";
-      return postEvent(String(text), k);
+      return postEvent(String(text), k, notify_key || "");
     },
   };
 

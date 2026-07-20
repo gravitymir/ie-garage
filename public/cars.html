@@ -212,6 +212,9 @@
     .muted { color: #666; font-size: 13px; margin: 12px 0; }
 
     /* Modal */
+    /* Add Car modal — wider now so variant labels ("Volkswagen (VW)
+       (EU) Golf VII 1.2 TSI (77 kW) 2013 - 2017") stop truncating with
+       an ellipsis. Height caps at viewport; content scrolls. */
     .modal-bg {
       display: none;
       position: fixed; inset: 0;
@@ -224,7 +227,7 @@
     .modal {
       background: #fff;
       border-radius: 8px;
-      max-width: 480px;
+      max-width: 780px;
       width: 100%;
       padding: 20px;
       max-height: 90vh;
@@ -319,6 +322,33 @@
       <a class="home" href="/index.html" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #3275ac; border-radius:4px; color:#3275ac; text-decoration:none; font-weight:600;">&larr; Home</a>
       <h1>Cars</h1>
     </div>
+    <!-- Odometer capture: type the reading BEFORE picking a car so it
+         doesn't get forgotten between the workshop floor and the
+         computer. Values propagate as ?km=…&mi=… on every navigation
+         (car card / Add Car) and land pre-filled on the fresh job's
+         mileage inputs. Height matches the Home button on the left so
+         the toolbar reads as one line.
+
+         When one input is active, the OTHER slot swaps its input for a
+         big black "km" / "mi" text label naming the ACTIVE unit — a
+         constant visual reminder of which unit the mechanic is
+         entering. The label hugs the active input on its inner side
+         (label "km" left-aligned in the mi slot, label "mi" right-
+         aligned in the km slot). -->
+    <div class="odo-strip" style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+      <div class="odo-slot" style="position:relative; width:150px; height:34px;">
+        <input type="number" id="odo-km" min="0" step="1" placeholder="km"
+               style="width:100%; height:100%; box-sizing:border-box; padding:4px 10px; border:1px solid #bbb; border-radius:4px; font-size:18px; font-family:inherit;" />
+        <span id="odo-label-km"
+              style="position:absolute; inset:0; display:none; align-items:center; justify-content:flex-end; padding-right:10px; font-size:20px; font-weight:700; color:#000; pointer-events:none;">mi</span>
+      </div>
+      <div class="odo-slot" style="position:relative; width:150px; height:34px;">
+        <input type="number" id="odo-mi" min="0" step="1" placeholder="mi"
+               style="width:100%; height:100%; box-sizing:border-box; padding:4px 10px; border:1px solid #bbb; border-radius:4px; font-size:18px; font-family:inherit;" />
+        <span id="odo-label-mi"
+              style="position:absolute; inset:0; display:none; align-items:center; justify-content:flex-start; padding-left:10px; font-size:20px; font-weight:700; color:#000; pointer-events:none;">km</span>
+      </div>
+    </div>
   </div>
 
   <div class="toolbar">
@@ -390,8 +420,19 @@
     let cars = [];
     let lastStepA = null; // raw step-a response for the plate being added
 
+    // Cyrillic letters that look identical to Latin ones — mechanic
+    // types with the Russian layout on and gets an invisible С instead
+    // of C, an А instead of A, etc. Sanitize would then strip them and
+    // silently mangle the plate. Transliterate to Latin FIRST.
+    const CYR_TO_LAT = {
+      "А":"A","В":"B","С":"C","Е":"E","Н":"H","К":"K","М":"M","О":"O","Р":"P","Т":"T","Х":"X","У":"Y",
+      "а":"A","в":"B","с":"C","е":"E","н":"H","к":"K","м":"M","о":"O","р":"P","т":"T","х":"X","у":"Y",
+    };
+    function cyrToLat(s) {
+      return String(s || "").replace(/[А-яЁё]/g, ch => CYR_TO_LAT[ch] || ch);
+    }
     function sanitizePlate(s) {
-      return String(s || "").trim().toUpperCase().replace(/[^A-Z0-9\-_]/g, "");
+      return cyrToLat(String(s || "").trim()).toUpperCase().replace(/[^A-Z0-9\-_]/g, "");
     }
 
     function render() {
@@ -440,7 +481,8 @@
       filtered.forEach(c => {
         const a = document.createElement("a");
         a.className = "car";
-        a.href = `/car.html?plate=${encodeURIComponent(c.plate)}`;
+        a.dataset.plate = c.plate; // used by refreshCardUrls() when odo changes
+        a.href = carUrl(c.plate);
         const lastJob = c.last_job_ms
           ? new Date(c.last_job_ms).toLocaleDateString()
           : "-";
@@ -555,7 +597,7 @@
         const existing = findExistingCar(query);
         if (existing) {
           // Already in the database — jump directly to it.
-          window.location.href = `/car.html?plate=${encodeURIComponent(existing.plate)}`;
+          window.location.href = carUrl(existing.plate);
           return;
         }
         runLookup();
@@ -572,6 +614,74 @@
       document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
       document.getElementById("pane-" + t.dataset.pane).classList.add("active");
     }));
+
+    // ---------- Odometer capture (top-right km/mi inputs) ----------
+    // Mechanic types the reading BEFORE picking a car so it doesn't get
+    // forgotten between the workshop floor and the keyboard. Only ONE
+    // unit is captured — the moment the mechanic starts typing in km
+    // the mi field hides (and vice-versa), so the URL carries just one
+    // canonical value. The hidden field keeps its layout slot via
+    // visibility:hidden so the toolbar doesn't jump. The corresponding
+    // unit gets computed on the job page from the shared km↔mi
+    // converter that lives there.
+    (function () {
+      const odoKm = document.getElementById("odo-km");
+      const odoMi = document.getElementById("odo-mi");
+      const labelKm = document.getElementById("odo-label-km"); // sits in KM slot, shows "mi"
+      const labelMi = document.getElementById("odo-label-mi"); // sits in MI slot, shows "km"
+      if (!odoKm || !odoMi) return;
+      function refreshVis() {
+        const kmHas = odoKm.value.trim() !== "";
+        const miHas = odoMi.value.trim() !== "";
+        // When km is being typed → hide mi input, show "km" label in mi
+        // slot (left-aligned, hugging the km input on its right). And
+        // symmetrically for mi. Both empty → both inputs visible, both
+        // labels hidden.
+        const hideKm = miHas && !kmHas;
+        const hideMi = kmHas && !miHas;
+        odoKm.style.visibility  = hideKm ? "hidden" : "visible";
+        odoMi.style.visibility  = hideMi ? "hidden" : "visible";
+        // Toggle display directly — the inline `display:none` default
+        // is what keeps labels hidden at first paint; we flip to `flex`
+        // when the corresponding input is hidden. (The HTML `hidden`
+        // attribute wouldn't work here because the inline flex style
+        // needed for alignment overrides it.)
+        if (labelKm) labelKm.style.display = hideKm ? "flex" : "none"; // "mi" label in the km slot
+        if (labelMi) labelMi.style.display = hideMi ? "flex" : "none"; // "km" label in the mi slot
+      }
+      odoKm.addEventListener("input", refreshVis);
+      odoMi.addEventListener("input", refreshVis);
+      refreshVis();
+    })();
+
+    // Rewrite a card's href on mousedown (fires before click for left,
+    // middle and ctrl-click), so the outgoing URL always reflects the
+    // current odometer. Delegated on document — cheap: only touches
+    // the ONE anchor being clicked, not the whole grid of 100+ cards
+    // whenever the mechanic types a digit.
+    document.addEventListener("mousedown", (e) => {
+      const a = e.target.closest && e.target.closest("a.car[data-plate]");
+      if (a) a.href = carUrl(a.dataset.plate);
+    });
+
+    // Query-string tail to append when navigating to /car.html — empty
+    // when both fields are blank, so URLs stay clean on the common case.
+    // At most one of km/mi is present (the input mechanism above hides
+    // the field the mechanic didn't touch).
+    function odoQS() {
+      const km = document.getElementById("odo-km");
+      const mi = document.getElementById("odo-mi");
+      const parts = [];
+      if (km && km.value.trim()) parts.push("km=" + encodeURIComponent(km.value.trim()));
+      if (mi && mi.value.trim()) parts.push("mi=" + encodeURIComponent(mi.value.trim()));
+      return parts.length ? "&" + parts.join("&") : "";
+    }
+    // One-liner for building a car page URL that carries the current
+    // odometer capture forwards. Used everywhere a click routes to
+    // /car.html — card link, lookup success, plate suggestion, etc.
+    function carUrl(plate) {
+      return `/car.html?plate=${encodeURIComponent(plate)}${odoQS()}`;
+    }
 
     // Lookup
     const lookupStatus = document.getElementById("lookup-status");
@@ -596,7 +706,7 @@
     // about the year. Returns a full 4-digit year or null when the plate
     // doesn't look like an Irish reg.
     function plateRegYear(plate) {
-      const s = String(plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const s = cyrToLat(String(plate || "")).toUpperCase().replace(/[^A-Z0-9]/g, "");
       const m = s.match(/^(\d{2})([12])?[A-Z]/);
       if (!m) return null;
       const yy = Number(m[1]);
@@ -730,7 +840,7 @@
         lookupStatus.textContent = `Car ${existing.plate} already in database — opening...`;
         lookupStatus.classList.remove("err");
         setTimeout(() => {
-          window.location.href = `/car.html?plate=${encodeURIComponent(existing.plate)}`;
+          window.location.href = carUrl(existing.plate);
         }, 250);
         return;
       }
@@ -835,7 +945,7 @@
     let suggList = [];
 
     function normPlate(s) {
-      return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      return cyrToLat(String(s || "")).toUpperCase().replace(/[^A-Z0-9]/g, "");
     }
     function findExistingCar(typed) {
       const target = normPlate(typed);
@@ -864,7 +974,7 @@
         `;
         d.addEventListener("mousedown", (e) => {
           e.preventDefault(); // keep focus so blur doesn't fire first
-          window.location.href = `/car.html?plate=${encodeURIComponent(c.plate)}`;
+          window.location.href = carUrl(c.plate);
         });
         suggestionsEl.appendChild(d);
       });
@@ -907,7 +1017,7 @@
         if (e.key === "Enter" && suggIndex >= 0) {
           e.preventDefault();
           const pick = suggList[suggIndex];
-          window.location.href = `/car.html?plate=${encodeURIComponent(pick.plate)}`;
+          window.location.href = carUrl(pick.plate);
           return;
         }
         if (e.key === "Escape") {
@@ -1008,7 +1118,7 @@
           } catch (_) {}
         }
         setTimeout(() => {
-          window.location.href = `/car.html?plate=${encodeURIComponent(cleanPlate)}`;
+          window.location.href = carUrl(cleanPlate);
         }, 600);
       } catch (e) {
         lookupStatus.textContent = "Error: " + e.message;
@@ -1050,7 +1160,7 @@
         });
         if (!res.ok) throw new Error(await res.text());
         closeModal();
-        window.location.href = `/car.html?plate=${encodeURIComponent(plate)}`;
+        window.location.href = carUrl(plate);
       } catch (e) {
         document.getElementById("manual-status").textContent = "Error: " + e.message;
       } finally {

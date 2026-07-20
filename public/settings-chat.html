@@ -110,76 +110,9 @@
 
   <div id="toast-holder"></div>
 
-  <div class="card">
-    <h2>Events posted to the chat feed</h2>
-    <div class="lead">
-      Turn on the workshop events you want the shared chat to show. Turning
-      an event off just hides it from the feed — the underlying data
-      (jobs, stock counts) is unaffected.
-    </div>
-
-    <div class="events">
-      <label class="event">
-        <div class="ic ic-open">●</div>
-        <div class="body">
-          <div class="name">Car taken in for work</div>
-          <div class="desc">A new job was created for a car (job started).</div>
-        </div>
-        <span class="toggle">
-          <input type="checkbox" id="chat_notify_job_started" />
-          <span class="track"></span>
-        </span>
-      </label>
-
-      <label class="event">
-        <div class="ic ic-workdone">✓✓</div>
-        <div class="body">
-          <div class="name">Work done</div>
-          <div class="desc">Job marked as completed — this is the terminal state. Editable on the same day; frozen after midnight.</div>
-        </div>
-        <span class="toggle">
-          <input type="checkbox" id="chat_notify_job_finished" />
-          <span class="track"></span>
-        </span>
-      </label>
-
-      <label class="event">
-        <div class="ic ic-open">↺</div>
-        <div class="body">
-          <div class="name">Job reopened</div>
-          <div class="desc">Same-day rework — the job returned from Work done back to Open.</div>
-        </div>
-        <span class="toggle">
-          <input type="checkbox" id="chat_notify_job_reopened" />
-          <span class="track"></span>
-        </span>
-      </label>
-
-      <label class="event">
-        <div class="ic">📦</div>
-        <div class="body">
-          <div class="name">Stock arrival</div>
-          <div class="desc">A store item's current count went up (goods received or manual increase).</div>
-        </div>
-        <span class="toggle">
-          <input type="checkbox" id="chat_notify_stock_arrival" />
-          <span class="track"></span>
-        </span>
-      </label>
-
-      <label class="event">
-        <div class="ic">⚠️</div>
-        <div class="body">
-          <div class="name">Low stock</div>
-          <div class="desc">An item dropped below its minimum count — reorder needed.</div>
-        </div>
-        <span class="toggle">
-          <input type="checkbox" id="chat_notify_low_stock" />
-          <span class="track"></span>
-        </span>
-      </label>
-    </div>
-  </div>
+  <!-- The per-event notification toggles used to live here as a global
+       policy. They've moved to Worker → Chat notifications so each
+       mechanic can mute/unmute independently. -->
 
   <!-- Retention card — how deep the chat feed goes, and whether older
        messages get physically pruned from localStorage. All three number
@@ -302,13 +235,11 @@
   </div>
 
   <script>
-    const KEYS = [
-      "chat_notify_job_started",
-      "chat_notify_job_finished",
-      "chat_notify_job_reopened",
-      "chat_notify_stock_arrival",
-      "chat_notify_low_stock",
-    ];
+    // Notify-toggle keys used to live here as a global policy; they
+    // moved to Worker → Chat notifications. Nothing on this page reads
+    // them anymore, but the array constant is kept as an empty list so
+    // downstream KEYS.forEach loops stay well-formed.
+    const KEYS = [];
 
     const toastHolder = document.getElementById("toast-holder");
     function toast(kind, msg) {

@@ -1182,6 +1182,12 @@ struct JobItem {
     time_in: String,
     time_out: String,
     work_summary: String,
+    // Odometer reading captured on this job — plain km string (whole
+    // number in practice; the raw field is a free-form input so we
+    // pass it through as text and let the frontend truncate). Rendered
+    // between the job number and the description on car.html's job
+    // list so past mileages are visible at a glance.
+    kilometrage: String,
     // Status shown as a badge next to each row on car.html. Same vocabulary
     // as jobs.html: open / paused / work_done / closed. Legacy "finished"
     // records surface as "finished" here — the frontend maps them to
@@ -1236,6 +1242,11 @@ async fn list_car_jobs(Path(plate): Path<String>) -> Result<Json<Value>, (Status
                     .join("; ")
             })
             .unwrap_or_default();
+        let kilometrage = json
+            .get("kilometrage")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let saved_ms = std::fs::metadata(&p)
             .ok()
             .and_then(|m| m.modified().ok())
@@ -1262,6 +1273,7 @@ async fn list_car_jobs(Path(plate): Path<String>) -> Result<Json<Value>, (Status
             time_in,
             time_out,
             work_summary,
+            kilometrage,
             status,
         });
     }
@@ -1425,6 +1437,7 @@ struct GlobalJobItem {
     fuel_type: String,
     displacement: String,    // "1.4", "2.0" – from variant name
     engine_summary: String,  // "CJCB · 136HP, 100KW, 4200RPM · 5 L"
+    kilometrage: String,     // odometer at the time of this job, km as text
     // True when the car has a photo on disk — used by the hover-preview on
     // /jobs.html to know whether to try loading /api/cars/:plate/photo/thumb.
     has_photo: bool,
@@ -1756,6 +1769,11 @@ async fn list_all_jobs() -> Result<Json<Value>, (StatusCode, String)> {
             // The file mtime is bumped on every save (incl. pause / resume /
             // finish), so it doubles as a "last activity" timestamp.
             let last_active_ms = saved_ms;
+            let kilometrage = json
+                .get("kilometrage")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             items.push(GlobalJobItem {
                 plate: plate.clone(),
                 name,
@@ -1774,6 +1792,7 @@ async fn list_all_jobs() -> Result<Json<Value>, (StatusCode, String)> {
                 fuel_type: fuel_type.clone(),
                 displacement: displacement.clone(),
                 engine_summary: engine_summary.clone(),
+                kilometrage,
                 has_photo,
                 photo_updated_ms,
             });
@@ -2164,6 +2183,27 @@ fn normalize_rule_payload(payload: &mut Value) {
             })
             .unwrap_or_default();
         obj.insert("parts".to_string(), Value::Array(parts));
+
+        // services: array of {desc} objects — labour lines with no parts
+        // (tracking, road-test, brake-bleed). A bare string in the array
+        // is treated as {desc: <string>} for forward compat.
+        let services: Vec<Value> = obj
+            .get("services")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| {
+                        let desc = match item {
+                            Value::String(s) => s.trim().to_string(),
+                            Value::Object(o) => o.get("desc").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+                            _ => String::new(),
+                        };
+                        if desc.is_empty() { None } else { Some(json!({ "desc": desc })) }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        obj.insert("services".to_string(), Value::Array(services));
 
         // oils block:
         //   enabled            (bool)         — append all MPM-recommended engine oils on autofill
@@ -3515,16 +3555,8 @@ fn settings_defaults() -> Value {
         "screensaver_idle_minutes": 10,
         "screensaver_bg_color": "#000000",
         "print_show_logo": true,
-        // Chat notifications — per-event toggles. Defaults to "everything on"
-        // so new installs get the full workshop feed; users can mute noise
-        // via Settings → Chat.
-        "chat_notify_job_started": true,
-        // "job_finished" gates the Work done event — the terminal one now
-        // that Close & deliver has been merged in.
-        "chat_notify_job_finished": true,
-        "chat_notify_job_reopened": true,
-        "chat_notify_stock_arrival": true,
-        "chat_notify_low_stock": true,
+        // Per-event chat notifications are now stored per-worker (see
+        // worker.json → chat_notify_*), not in global settings.
         // Chat feed retention. Three fields combine into one duration so the
         // user can say e.g. "1 month" or "15 days" or "12 hours" naturally.
         // 0 in every slot means "no limit — keep everything".
@@ -3555,13 +3587,6 @@ fn settings_defaults() -> Value {
         //     phone if the scan itself carries no division hint.
         "scanner_pair_ttl_minutes": 10,
         "scanner_default_division": "",
-        // Voice-to-text on the Notes field in /job.html. The browser's
-        // built-in Web Speech API (Chrome, Edge, Safari) does the work
-        // for free; this is only the recognition language passed to it.
-        // Provider slot is reserved for a future paid backend (Google
-        // Cloud STT, Whisper, etc.) — right now we always use "browser".
-        "voice_input_lang": "en-US",
-        "voice_input_provider": "browser",
         // Backup / restore. Engine is unimplemented — these fields exist
         // so the Settings → Backup page can already persist the user's
         // choices, and when the scheduler + download endpoints come
@@ -3943,6 +3968,12 @@ struct ChatEventBody {
     text: String,
     #[serde(default)]
     kind: String,
+    // Fine-grained identifier used by per-worker chat notification
+    // filters — one of "job_started", "job_finished", "job_reopened",
+    // "stock_arrival", "low_stock". Empty for events that shouldn't
+    // participate in the filter (they always show).
+    #[serde(default)]
+    notify_key: String,
 }
 
 async fn post_chat_event(
@@ -3961,6 +3992,7 @@ async fn post_chat_event(
     let entry = json!({
         "type": "event",
         "kind": kind,
+        "notify_key": payload.notify_key.trim(),
         "text": text,
     });
     let saved = append_chat_entry(entry)?;
