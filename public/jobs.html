@@ -350,9 +350,19 @@
       }
     }
 
+    // Cyrillic → Latin lookalike swap. Mechanic typing with the Russian
+    // layout on gets an invisible С instead of C — the substitution
+    // happens live so the visible input value stays clean without any
+    // hunt-and-fix step later.
+    const CYR_TO_LAT = {
+      "А":"A","В":"B","С":"C","Е":"E","Н":"H","К":"K","М":"M","О":"O","Р":"P","Т":"T","Х":"X","У":"Y",
+      "а":"A","в":"B","с":"C","е":"E","н":"H","к":"K","м":"M","о":"O","р":"P","т":"T","х":"X","у":"Y",
+    };
+    const cyrToLat = (s) => String(s || "").replace(/[А-яЁё]/g, ch => CYR_TO_LAT[ch] || ch);
+
     searchEl.addEventListener("input", () => {
       const pos = searchEl.selectionStart;
-      searchEl.value = searchEl.value.toUpperCase();
+      searchEl.value = cyrToLat(searchEl.value).toUpperCase();
       try { searchEl.setSelectionRange(pos, pos); } catch (_) {}
       render();
     });

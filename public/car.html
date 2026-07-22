@@ -317,7 +317,7 @@
       </div>
       <div class="field">
         <label>VIN</label>
-        <input type="text" id="vin" maxlength="17" placeholder="17 chars (no I, O, Q)" />
+        <input type="text" id="vin" maxlength="17" placeholder="17 CHARS (NO I, O, Q)" style="text-transform: uppercase;" />
       </div>
       <div class="field">
         <label>PIN</label>
@@ -586,6 +586,20 @@
       el.addEventListener("change", checkDirty);
     });
 
+    // Live uppercase on the VIN input — the text-transform on the
+    // element only paints uppercase; without this the underlying
+    // .value would still carry whatever case the mechanic typed, and
+    // that lowercase string would be what gets saved to car.json.
+    (function () {
+      const el = document.getElementById("vin");
+      if (!el) return;
+      el.addEventListener("input", () => {
+        const pos = el.selectionStart;
+        el.value = el.value.toUpperCase();
+        try { el.setSelectionRange(pos, pos); } catch (_) {}
+      });
+    })();
+
     // Update the big fuel-type badge in the header (PETROL / DIESEL / HYBRID / …).
     function refreshFuelBadge(fuel) {
       const badge = document.getElementById("fuel-badge");
@@ -727,6 +741,18 @@
         const items = data.items || [];
         cnt.textContent = `(${items.length})`;
         updateDeleteState(items.length);
+        // Hide "+ New Job" while any prior job on this car is still in
+        // flight (open or paused). Forces the mechanic to close the
+        // current work order before opening a new one, so we don't end
+        // up with two simultaneous open jobs on the same car by
+        // accident. Terminal states (work_done + legacy closed/finished)
+        // don't count as "in flight".
+        const inFlight = items.some(j => {
+          const s = String(j.status || "").toLowerCase();
+          return s === "open" || s === "paused";
+        });
+        const newBtn = document.getElementById("new-job");
+        if (newBtn) newBtn.style.display = inFlight ? "none" : "";
         if (!items.length) {
           list.innerHTML = `<div class="muted">No jobs yet.</div>`;
           return;

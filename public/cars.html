@@ -549,7 +549,11 @@
 
     searchEl.addEventListener("input", () => {
       const pos = searchEl.selectionStart;
-      searchEl.value = searchEl.value.toUpperCase();
+      // Live Cyrillic → Latin swap on lookalike letters: mechanic
+      // typing "141С15042" with the Russian layout on turns the visible
+      // value into "141C15042" mid-keystroke — no need to notice or fix
+      // later. cyrToLat is defined at the top of this file.
+      searchEl.value = cyrToLat(searchEl.value).toUpperCase();
       try { searchEl.setSelectionRange(pos, pos); } catch (_) {}
       render();
     });
